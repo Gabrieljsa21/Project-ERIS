@@ -27,10 +27,17 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
 - **Slash command `/exportar`** - mesma função do antigo botão "📤 EXPORTAR
   CANAL (JSON)" do Painel da GAIA, agora também acionável direto no
   Discord ou via HTTP (`POST /exportar`).
+- **Modo Intérprete e Modo Tutora por voz migrados (2026-08-25)** -
+  `/interprete entrar/sair` (também por menção, "entra"/"traduz"/"sai") e
+  `/tutora entrar/sair`. O ERIS entra na call, captura o áudio por
+  participante até a pausa e toca o áudio de resposta
+  (`eris/core/voz_call.py`, `voz_captura.py`, `vad.py`); a GAIA continua
+  dona de STT/LLM/TTS via webhook reverso por turno (`POST /eris/
+  interprete/{iniciar,encerrar,turno}`, `GET /eris/tutora/status`,
+  `POST /eris/tutora/turno`).
 
 ### Pendências conhecidas (ver ARQUITETURA.md e TODO.md)
 - Slash commands de ação que dependem da GAIA (`/abrir`, `/jornalista`
   etc.) não foram migrados - desenho fechado, implementação para depois.
-- Intérprete/Tutora por voz em call do Discord não foram migrados -
-  `/interprete`/`/tutora` respondem só com aviso.
-- Nenhuma validação contra um servidor/bot Discord real ainda foi feita.
+- Nenhuma validação contra um servidor/bot Discord real ainda foi feita
+  (inclusive Intérprete/Tutora por voz, ainda mais sensível a isso).

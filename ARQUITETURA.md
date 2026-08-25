@@ -23,7 +23,7 @@ o fraseio continua sendo persona, e fica com a GAIA.
 | Slash commands de ação (`/abrir` etc.) | **fora do escopo desta v1** | ver "Pendências" abaixo |
 | Moderação/administração | ✅ 100% local, zero IA | - |
 | Exportação de canal | ✅ | - |
-| Voz (Intérprete/Tutora) | **fora do escopo desta v1** | ver "Pendências" abaixo |
+| Voz (Intérprete/Tutora) | ✅ conexão/captura/playback (`eris.core.voz_call`) | ✅ transcrição/tradução/resposta/síntese via webhook |
 | Notificações proativas (Hidratação, Steam, etc.) | executa a entrega | ✅ decide se/quando/o quê |
 
 ## Os 4 pontos que precisaram de desenho novo
@@ -49,13 +49,21 @@ cada um foi decidido explicitamente antes de escrever código (conversa de
    expor `INFO_COMANDOS`/`INFO_COMANDOS_ASSINCRONOS` pra cá e um contrato de
    webhook próprio - não é mecânico o bastante pra entrar na mesma extração
    que o resto sem risco de regressão. Ver TODO.md.
-4. **Intérprete/Tutora por voz em call** - o desenho fechado é turno-a-turno
-   (ERIS captura áudio até o silêncio → manda pra GAIA → GAIA transcreve/
-   decide/sintetiza → devolve áudio → ERIS toca), não streaming contínuo -
-   cabe no mesmo padrão de webhook reverso, só que com bytes de áudio em vez
-   de só texto. **Não implementado nesta v1** (ver "Pendências" abaixo) -
-   exige `discord-ext-voice-recv`/PyNaCl (fora das dependências da v1 de
-   propósito) e não tem como validar sem um servidor/call real.
+4. **Intérprete/Tutora por voz em call** - **implementado em 2026-08-25**,
+   turno-a-turno (ERIS captura áudio até o silêncio → manda pra GAIA → GAIA
+   transcreve/decide/sintetiza → devolve o CAMINHO local do áudio → ERIS
+   toca), não streaming contínuo - cabe no mesmo padrão de webhook reverso,
+   só que com áudio em vez de só texto. `eris/core/voz_call.py` (sessão de
+   voz por guild, só 1 por vez já que Discord só permite 1 conexão de voz
+   por servidor) + `eris/core/voz_captura.py`/`vad.py` (captura por
+   participante, portados de `features/interprete/audio.py`/`core/voice/
+   vad.py::VoiceFilterRMS` na GAIA). Do lado da GAIA, `features/interprete/
+   sessao.py` foi reescrito pra não depender mais de `discord.py` - só
+   guarda o ESTADO da tradução (contexto, idioma estrangeiro atual),
+   `features/tutora/sessao_discord.py` foi removido (a lógica de turno virou
+   uma função simples em `run.py`, sem precisar de estado por guild).
+   Endpoints novos: `POST /eris/interprete/{iniciar,encerrar,turno}`,
+   `GET /eris/tutora/status`, `POST /eris/tutora/turno`.
 
 ## Por que processo próprio (padrão IRIS/MOIRAI/HESTIA), não padrão Argus
 
@@ -95,12 +103,11 @@ acontece via provedor de streaming (Spotify/YouTube Music), nunca numa call
 que o bot entra. Se o Radar Musical for entregue por Discord um dia, é só
 mais uma entrega de notificação de texto, sem peça nova pro ERIS.
 
-## Pendências desta v1 (não implementadas de propósito)
+## Pendências
 
 - **Slash commands de ação via webhook** (`/abrir`, `/jornalista`, etc.) -
   desenho fechado, implementação fora do escopo (ponto 3 acima).
-- **Intérprete/Tutora por voz** - desenho fechado (turno de áudio via
-  webhook), implementação fora do escopo (ponto 4 acima). Os slash commands
-  `/interprete`/`/tutora` existem só como aviso.
 - Nenhuma validação contra um servidor/bot Discord real ainda foi feita -
-  ver README.md, "Estado da extração".
+  ver README.md, "Estado da extração" (agora vale também pro Intérprete/
+  Tutora por voz: sintaxe/imports verificados, mas nenhuma call de voz de
+  verdade foi testada).

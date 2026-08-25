@@ -26,8 +26,11 @@ Nenhum dos módulos foi testado com um token/servidor de verdade ainda (o
 ambiente onde foram escritos não tem acesso a isso). Antes de confiar no
 dia a dia: conectar com um token real, uma conversa por DM de ponta a
 ponta (passando pelo webhook reverso até a GAIA), um comando de moderação
-de cada grupo (`/moderacao`, `/mensagem`, `/canal`, `/cargo`), e uma
-exportação de canal (`/exportar`).
+de cada grupo (`/moderacao`, `/mensagem`, `/canal`, `/cargo`), uma
+exportação de canal (`/exportar`), e `/interprete entrar`/`/tutora entrar`
+numa call de voz real (2026-08-25 - a parte que exige mais atenção: Opus/
+PyNaCl, qualidade da detecção de fim de fala por RMS, latência da ida e
+volta pelo webhook).
 
 ### Slash commands de ação que dependem da GAIA
 
@@ -41,19 +44,6 @@ webhook reverso; a GAIA roda o handler de sempre e devolve o texto. Falta
 implementar o lado da GAIA que expõe essa lista + o endpoint novo no
 webhook reverso (`/eris/comando`, simétrico ao `/eris/mensagem` já
 existente).
-
-### Intérprete/Tutora por voz em call do Discord
-
-**Prioridade:** Média | **Complexidade:** Alta
-
-Desenho fechado (ver ARQUITETURA.md, ponto 4): ERIS entra/sai da call,
-captura o áudio do falante até a pausa (`discord-ext-voice-recv` - não
-instalado ainda, ver `pyproject.toml`), manda o áudio pra GAIA via webhook
-reverso (`/eris/voz_turno`, ainda não existe), a GAIA transcreve (Whisper)/
-decide (LLM)/sintetiza (TTS) e devolve os bytes de áudio, o ERIS toca na
-call. Continua sendo persona quem decide o conteúdo (Whisper/LLM/TTS ficam
-no core da GAIA, decisão de arquitetura já fechada antes da extração) - o
-ERIS só transporta.
 
 ## Roadmap futuro (registrado, sem decisão de design específica ainda)
 
