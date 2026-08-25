@@ -27,10 +27,47 @@ ambiente onde foram escritos não tem acesso a isso). Antes de confiar no
 dia a dia: conectar com um token real, uma conversa por DM de ponta a
 ponta (passando pelo webhook reverso até a GAIA), um comando de moderação
 de cada grupo (`/moderacao`, `/mensagem`, `/canal`, `/cargo`), uma
-exportação de canal (`/exportar`), e `/interprete entrar`/`/tutora entrar`
-numa call de voz real (2026-08-25 - a parte que exige mais atenção: Opus/
-PyNaCl, qualidade da detecção de fim de fala por RMS, latência da ida e
-volta pelo webhook).
+exportação de canal (`/exportar`) - a voz por call (`/interprete
+entrar`/`/tutora entrar`/`/conversar entrar`) foi validada em 2026-08-25 e
+achou um bloqueio real, ver item "Voz na call não escuta nada" abaixo.
+
+### Voz na call não escuta nada - bloqueado por DAVE (E2EE) do Discord
+
+**Prioridade:** Alta | **Complexidade:** Alta (depende de terceiros)
+
+Validado em 2026-08-25 com uma call real: `/conversar entrar` conecta,
+ativa a escuta (`VoiceRecvClient.listen`), e pacotes RTP CHEGAM de
+verdade (confirmado com `discord.ext.voice_recv` em DEBUG) - mas o Opus
+decoder falha com `discord.opus.OpusError: corrupted stream` em todo
+pacote. Causa raiz: desde março de 2026, o Discord tornou obrigatória a
+criptografia ponta a ponta (protocolo **DAVE**) pra TODA call de voz/vídeo
+fora de Stage Channel, sem opção de desligar (nem por conta, nem por
+servidor - [confirmado oficialmente](https://support.discord.com/hc/en-us/articles/38749827197591-A-V-E2EE-Enforcement-for-Non-Stage-Voice-Calls)).
+O `discord.py` 2.7 já suporta DAVE no cliente de voz PRINCIPAL via o
+pacote `davey` (já vem instalado como dependência, confirmado - envio de
+áudio pela call deve funcionar normal), mas o `discord-ext-voice-recv`
+(biblioteca de terceiro que usamos pra RECEBER áudio, ver
+`eris/core/voz_call.py`) tem seu PRÓPRIO decodificador de pacote separado
+que nunca foi atualizado pra entender DAVE - só desencripta a camada RTP
+(`aead_xchacha20_poly1305_rtpsize`, que funciona), mas o áudio Opus por
+dentro continua criptografado pela camada DAVE (MLS), então vira lixo pro
+decoder. Confirmado como limitação conhecida da própria lib: [issue #64,
+aberta 18/08/2026, ainda sem resolução](https://github.com/imayhaveborkedit/discord-ext-voice-recv/issues/64)
+("Add DAVE decryption support"), e outros usuários relatando o mesmo erro
+depois de atualizar pro discord.py 2.7.1 (issue #53 do mesmo repo).
+
+**Não é bug nosso, é limitação de uma dependência de terceiro sem suporte
+a DAVE ainda.** Caminhos possíveis (nenhum decidido ainda):
+1. Esperar o `discord-ext-voice-recv` adicionar suporte (acompanhar a
+   issue #64).
+2. Implementar a decriptação DAVE por conta própria, hookando o pacote
+   `davey` (já instalado, já usado pelo `discord.py` core) direto no
+   pipeline de recepção do `voice_recv` antes do Opus decode - trabalho
+   real de integração de criptografia, não trivial.
+3. Aceitar a limitação por enquanto - Intérprete/Tutora/Modo Conversa por
+   voz numa call ficam bloqueados (a Gala pode ENTRAR e FALAR na call
+   normalmente, já que o envio usa o cliente principal do discord.py com
+   DAVE - só não consegue OUVIR ninguém).
 
 ### Slash commands de ação que dependem da GAIA
 
