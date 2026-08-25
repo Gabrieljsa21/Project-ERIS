@@ -5,21 +5,56 @@ description = "Bot de Discord da G.A.I.A. - conexão, segurança, mensagens, mod
 requires-python = ">=3.11"
 dependencies = [
     "discord.py>=2.7",
-    "discord-ext-voice-recv",
+    "discord-ext-voice-recv-dave @ git+https://github.com/Gabrieljsa21/discord-ext-voice-recv-dave.git@78fcb434a3484f2abf54cf89e80e86b651e5c28d",
+    "davey>=0.1.4",
     "PyNaCl",
     "numpy",
     "requests>=2.31",
     "python-dotenv",
 ]
-# 🔥 discord-ext-voice-recv/PyNaCl/numpy (2026-08-25) - recepção de áudio de voz
-# pro Modo Intérprete/Tutora (ver eris/core/voz_captura.py, eris/core/vad.py).
-# libopus não precisa ser INSTALADO à parte no Windows - discord.py já embute o
-# DLL (`discord/bin/libopus-0.x64.dll`) - mas precisa ser CARREGADO explicitamente
-# em runtime (`discord.opus._load_default()`, ver eris/bot.py::iniciar_bot) - a
-# lib NÃO faz isso sozinha no import (achado real 2026-08-25: sem essa chamada, a
-# call conecta normal mas não ouve nem fala nada, em silêncio). Também precisa do
-# ffmpeg (conversão de voz nativa, já usado por eris/core/voz_nativa.py) pra tocar
-# o áudio sintetizado na call.
+# 🔥 discord-ext-voice-recv-dave/PyNaCl/numpy (2026-08-25) - recepção de áudio de
+# voz pro Modo Intérprete/Tutora/Conversa (ver eris/core/voz_captura.py, eris/core/
+# vad.py). libopus não precisa ser INSTALADO à parte no Windows - discord.py já
+# embute o DLL (`discord/bin/libopus-0.x64.dll`) - mas precisa ser CARREGADO
+# explicitamente em runtime (`discord.opus._load_default()`, ver
+# eris/bot.py::iniciar_bot) - a lib NÃO faz isso sozinha no import (achado real
+# 2026-08-25: sem essa chamada, a call conecta normal mas não ouve nem fala nada,
+# em silêncio). Também precisa do ffmpeg (conversão de voz nativa, já usado por
+# eris/core/voz_nativa.py) pra tocar o áudio sintetizado na call.
+#
+# 🔥 `discord-ext-voice-recv-dave` (2026-08-25, achado real) - o
+# `discord-ext-voice-recv` original está SEM commit desde 2025-06-18,
+# efetivamente sem manutenção desde a imposição do DAVE em 2026-03-02 pelo
+# Discord (toda call de voz sem suporte a DAVE cai com erro 4017). O original
+# decripta certo a camada RTP, mas o Opus por dentro continua criptografado
+# pela camada DAVE (MLS) - vira "OpusError: corrupted stream" em todo pacote
+# (bug real, ver docs/CORRECOES.md da GAIA). Existe uma correção real da
+# comunidade pra isso - PR #54 (`imayhaveborkedit/discord-ext-voice-recv#54`,
+# https://github.com/imayhaveborkedit/discord-ext-voice-recv/pull/54, ainda
+# aberta, NÃO mesclada upstream) - delega a decriptação de verdade pro
+# `davey` oficial do Discord (binding Python de `libdave`), nunca reimplementa
+# criptografia própria. VALIDADA numa call real (2026-08-25 - "agora eu a
+# escutei", ver TODO.md).
+#
+# 🔥 FORK PRÓPRIO, não de terceiro (2026-08-25, pedido do usuário: "e ele
+# pode deixar privado ou algo assim e parar de funcionar p nos?") - a PR #54
+# tinha sido empacotada por um terceiro (`jstewart0788/discord-ext-voice-recv-dave`,
+# MIT, carregando a PR #54 + 1 commit de hardening próprio - except mais
+# estrito, logs separados de "SSRC sem membro" vs "falha de decrypt DAVE").
+# Depender do fork de uma conta que a gente não controla é risco de cadeia de
+# suprimentos de verdade (repo pode sumir/virar privado/ser apagado, e um
+# `uv sync` do zero simplesmente falha) - resolvido fazendo um fork DESSE
+# fork pra dentro da própria conta (`Gabrieljsa21/discord-ext-voice-recv-dave`,
+# github.com/Gabrieljsa21/discord-ext-voice-recv-dave), preservando histórico/
+# atribuição. Caminho de import continua `discord.ext.voice_recv` (inalterado)
+# - nenhum código nosso precisou mudar, só a dependência. FIXADO por commit
+# SHA (não branch - branch pode sofrer force-push, SHA é imutável).
+#
+# Retirar este fork quando UM dos dois acontecer: (1) upstream mesclar a PR
+# #54 (ou equivalente) e lançar uma release - trocar pro
+# `imayhaveborkedit/discord-ext-voice-recv` oficial de novo; ou (2) o
+# `py-cord` ganhar suporte de recepção DAVE no core (acompanhado, mas ainda
+# não - o suporte a DAVE dele hoje também é só pro lado de envio).
 
 [build-system]
 requires = ["setuptools>=68"]

@@ -67,18 +67,28 @@ ainda não mesclada upstream (repo original sem commit desde 18/06/2025,
 efetivamente sem manutenção desde a imposição do DAVE). Múltiplos usuários
 confirmaram nos comentários que resolve o `OpusError: corrupted stream`,
 inclusive alguém especificamente no discord.py 2.7.1 (nossa versão exata).
-Adotado via o fork `jstewart0788/discord-ext-voice-recv-dave` (MIT), que
-carrega a PR #54 + 1 commit de hardening próprio (except mais estrito,
-logs separados de "SSRC sem membro" vs "falha de decrypt DAVE") -
+Adotado inicialmente via o fork de terceiro `jstewart0788/discord-ext-voice-recv-dave`
+(MIT), que carrega a PR #54 + 1 commit de hardening próprio (except mais
+estrito, logs separados de "SSRC sem membro" vs "falha de decrypt DAVE") -
 auditado linha por linha antes de instalar (diff pequeno, +26/-4 nos
 arquivos originais). Delega a decriptação de verdade pro `davey` oficial
 do Discord (nunca reimplementa criptografia própria) - a API do `davey`
 0.1.6 já instalado bate exatamente com o que o patch espera
-(`MediaType.audio`/`.video`, `DaveSession`). Instalado em
-`pyproject.toml`, fixado por commit SHA (`78fcb434a3484f2abf54cf89e80e86b651e5c28d`,
-seguindo a recomendação do próprio fork - branch pode sofrer force-push).
-Caminho de import não mudou (`discord.ext.voice_recv`) - nenhum código
-nosso precisou mudar, só a dependência.
+(`MediaType.audio`/`.video`, `DaveSession`).
+
+🔥 **Fork movido pra conta própria (mesmo dia)** - pedido do usuário:
+"e ele pode deixar privado ou algo assim e parar de funcionar p nos?".
+Depender do fork de uma conta de terceiro é risco de cadeia de
+suprimentos de verdade (repo pode sumir/virar privado, `uv sync` do zero
+simplesmente falha) - resolvido com um fork DESSE fork pra dentro da
+própria conta
+([`Gabrieljsa21/discord-ext-voice-recv-dave`](https://github.com/Gabrieljsa21/discord-ext-voice-recv-dave),
+via `gh repo fork`, preservando histórico/atribuição). Instalado em
+`pyproject.toml`, fixado por commit SHA
+(`78fcb434a3484f2abf54cf89e80e86b651e5c28d`, não branch - branch pode
+sofrer force-push, SHA é imutável). Caminho de import não mudou
+(`discord.ext.voice_recv`) - nenhum código nosso precisou mudar, só a
+dependência.
 
 **Ressalvas conhecidas** (ver comentários da PR #54, lidos na íntegra
 antes de adotar): um bug de câmera ligada foi corrigido numa revisão

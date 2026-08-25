@@ -64,20 +64,23 @@ não a camada DAVE por dentro - vira lixo pro Opus decoder. Confirmado como
 limitação conhecida e aberta da própria lib ([issue #64](https://github.com/imayhaveborkedit/discord-ext-voice-recv/issues/64),
 sem resolução ainda).
 
-### Correção candidata instalada (2026-08-25, mesmo dia) - aguardando validação com call real
+### Correção instalada e VALIDADA (2026-08-25, mesmo dia)
 
 O usuário achou uma PR real da comunidade
 ([`discord-ext-voice-recv#54`](https://github.com/imayhaveborkedit/discord-ext-voice-recv/pull/54))
 que adiciona decriptação DAVE em `opus.py`, delegando pro `davey` oficial
 do Discord - múltiplos usuários confirmaram nos comentários que resolve o
 `corrupted stream`, inclusive no discord.py 2.7.1 (nossa versão). Adotado
-via o fork `jstewart0788/discord-ext-voice-recv-dave` (carrega a PR #54 +
-hardening próprio), auditado linha por linha antes de instalar - trocado
-em `pyproject.toml` (fixado por commit SHA), caminho de import inalterado,
-nenhum código nosso precisou mudar. Detalhe completo (ressalvas
-conhecidas, PR concorrente #56, quando retirar o fork) em `TODO.md`. **A
-dependência em si ainda não foi commitada** - pedido do usuário, testar
-localmente numa call real primeiro.
+via o fork de terceiro `jstewart0788/discord-ext-voice-recv-dave` (carrega
+a PR #54 + hardening próprio), auditado linha por linha antes de instalar
+- trocado em `pyproject.toml` (fixado por commit SHA), caminho de import
+inalterado, nenhum código nosso precisou mudar. **Validado numa call real
+- "agora eu a escutei"** (Modo Conversa funcionando de ponta a ponta).
+Depois movido pra um fork PRÓPRIO (`Gabrieljsa21/discord-ext-voice-recv-dave`,
+pedido do usuário: risco de o repositório de terceiro sumir/virar privado)
+- mesmo commit SHA, mesmo comportamento, agora numa conta controlada.
+Detalhe completo (ressalvas conhecidas, PR concorrente #56, quando
+retirar o fork) em `TODO.md`.
 
 ### Diagnóstico de reprodução na call (2026-08-25)
 
