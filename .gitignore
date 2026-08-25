@@ -19,6 +19,9 @@ data/*.json
 data/exportacoes_discord/
 data/tmp_audio/
 
+# Logs em disco (2026-08-25, ver eris/main.py::_RedirecionadorLog)
+logs/
+
 # Editores / SO
 .vscode/
 .idea/
