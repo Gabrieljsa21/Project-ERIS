@@ -62,12 +62,38 @@ ENTRAR e FALAR na call normal), mas o `discord-ext-voice-recv` (lib de
 terceiro que usamos pra RECEBER áudio) ainda decripta só a camada RTP,
 não a camada DAVE por dentro - vira lixo pro Opus decoder. Confirmado como
 limitação conhecida e aberta da própria lib ([issue #64](https://github.com/imayhaveborkedit/discord-ext-voice-recv/issues/64),
-sem resolução ainda). Detalhe completo (com todas as fontes) e os 3
-caminhos possíveis em `TODO.md`.
+sem resolução ainda).
+
+### Correção candidata instalada (2026-08-25, mesmo dia) - aguardando validação com call real
+
+O usuário achou uma PR real da comunidade
+([`discord-ext-voice-recv#54`](https://github.com/imayhaveborkedit/discord-ext-voice-recv/pull/54))
+que adiciona decriptação DAVE em `opus.py`, delegando pro `davey` oficial
+do Discord - múltiplos usuários confirmaram nos comentários que resolve o
+`corrupted stream`, inclusive no discord.py 2.7.1 (nossa versão). Adotado
+via o fork `jstewart0788/discord-ext-voice-recv-dave` (carrega a PR #54 +
+hardening próprio), auditado linha por linha antes de instalar - trocado
+em `pyproject.toml` (fixado por commit SHA), caminho de import inalterado,
+nenhum código nosso precisou mudar. Detalhe completo (ressalvas
+conhecidas, PR concorrente #56, quando retirar o fork) em `TODO.md`. **A
+dependência em si ainda não foi commitada** - pedido do usuário, testar
+localmente numa call real primeiro.
+
+### Diagnóstico de reprodução na call (2026-08-25)
+
+Testando a correção candidata acima numa call real: o áudio já chegava e
+era mandado pra GAIA processar, mas a resposta não era ouvida na call.
+`_tocar` (`eris/core/voz_call.py`) não logava NADA sobre a reprodução -
+nem sucesso nem erro do `.play()`/callback `after` - então não dava pra
+saber se a reprodução falhava em silêncio ou se o problema era outro
+(era outro: conteúdo errado do lado da GAIA, ver
+`Project G.A.I.A/assistant/docs/CORRECOES.md`). Adicionado log de início/
+fim/erro da reprodução.
 
 ### Pendências conhecidas (ver ARQUITETURA.md e TODO.md)
 - Slash commands de ação que dependem da GAIA (`/abrir`, `/jornalista`
   etc.) não foram migrados - desenho fechado, implementação para depois.
 - Nenhuma validação contra um servidor/bot Discord real ainda foi feita
-  (conexão/mensagem/moderação/exportação) - a voz por call FOI validada e
-  achou o bloqueio de DAVE acima.
+  (conexão/mensagem/moderação/exportação) - a voz por call FOI validada,
+  achou o bloqueio de DAVE acima, e agora tem uma correção candidata
+  aguardando validação com uma call real.

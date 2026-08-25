@@ -93,12 +93,27 @@ class SessaoVoz:
             await self._tocar(caminho_audio)
 
     async def _tocar(self, caminho_audio):
+        # 🔥 Diagnóstico (2026-08-25) - achado real: `.play()`/o callback `after`
+        # não logavam NADA, nem sucesso nem erro - com a decriptação DAVE de
+        # recepção corrigida (voz chegando e sendo mandada pra GAIA de verdade),
+        # não dava pra saber se o "não responde" restante era a reprodução
+        # falhando em silêncio (ex.: `discord.opus.OpusNotEncodable`, encode
+        # com sessão DAVE) ou se o áudio tocava e só não estava sendo ouvido.
+        print(f" [ERIS] Tocando resposta na call: {caminho_audio}")
         concluido = asyncio.Event()
 
         def _ao_terminar(erro):
+            if erro:
+                print(f" [ERIS] Erro ao tocar resposta na call: {erro}")
+            else:
+                print(" [ERIS] Reprodução na call concluída sem erro.")
             self._loop.call_soon_threadsafe(concluido.set)
 
-        self._vc.play(discord.FFmpegPCMAudio(caminho_audio), after=_ao_terminar)
+        try:
+            self._vc.play(discord.FFmpegPCMAudio(caminho_audio), after=_ao_terminar)
+        except Exception as e:
+            print(f" [ERIS] Erro ao INICIAR reprodução na call: {e}")
+            return
         await concluido.wait()
 
 
