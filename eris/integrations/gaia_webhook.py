@@ -20,9 +20,17 @@ import urllib.request
 from eris.config import URL_BASE_GAIA
 
 TIMEOUT_SEGUNDOS = 30  # generoso de propósito - a GAIA pode estar processando LLM/ferramenta
-# 🔥 Turno de voz (2026-08-25, Intérprete/Tutora) - encadeia Whisper + LLM (tradução
-# ou persona) + TTS do lado da GAIA, bem mais lento que uma mensagem de texto comum.
-TIMEOUT_TURNO_VOZ_SEGUNDOS = 60
+# 🔥 Turno de voz (2026-08-25, Intérprete/Tutora/Conversa) - encadeia Whisper +
+# LLM (tradução ou persona) + TTS do lado da GAIA, bem mais lento que uma
+# mensagem de texto comum. 120s (não 60s) - achado real 2026-08-25: o lado da
+# GAIA (`integrations/iris_bridge.py`) espera até 90s pelo próprio turno
+# (`future.result(timeout=90)`); com o timeout DAQUI menor que o de LÁ, o ERIS
+# desistia (fechando a conexão) ANTES da GAIA terminar de responder sob carga
+# pesada (várias contas do Groq esgotadas em sequência, caindo pro fallback
+# NVIDIA) - a GAIA gerava a resposta certinho, mas o `ConnectionAbortedError`
+# ao tentar escrever a resposta no socket já fechado jogava tudo fora,
+# silenciosamente (usuário via "às vezes dá erro e ela não responde").
+TIMEOUT_TURNO_VOZ_SEGUNDOS = 120
 
 
 def _post(caminho, corpo, timeout=TIMEOUT_SEGUNDOS):

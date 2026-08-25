@@ -105,6 +105,27 @@ estado real da sessão (`dave_session`/`can_encrypt`/`ready`) adicionado em
 `_tocar` ANTES de tocar, pra confirmar/descartar essa hipótese na próxima
 call real.
 
+### Voz na call CONFIRMADA funcionando (2026-08-25) - Modo Conversa validado numa call real de ponta a ponta
+
+A causa raiz real da reprodução inaudível não era DAVE (que já estava
+`can_encrypt=True`/`ready=True` em todo teste) - era o caminho de arquivo
+RELATIVO devolvido por `sintetizar_frase` (corrigido do lado da GAIA, ver
+`Project G.A.I.A/assistant/CHANGELOG.md`). Com essa correção, o usuário
+confirmou: "agora eu a escutei" - Modo Conversa por voz numa call do
+Discord funcionando de ponta a ponta pela primeira vez.
+
+### Correção: timeout do turno de voz menor do que o da GAIA (2026-08-25)
+
+Sob carga pesada (várias contas do Groq esgotadas em sequência, caindo pro
+fallback NVIDIA), um turno de voz às vezes não gerava resposta nenhuma -
+achado real: `TIMEOUT_TURNO_VOZ_SEGUNDOS` aqui era 60s, mas o lado da GAIA
+(`integrations/iris_bridge.py`) espera até 90s pelo próprio turno
+(`future.result(timeout=90)`) - o ERIS desistia (fechando a conexão) ANTES
+da GAIA terminar de responder. A GAIA gerava a resposta certinho, mas
+`ConnectionAbortedError` ao tentar escrever no socket já fechado jogava
+tudo fora, silenciosamente. Corrigido subindo pra 120s (folga real sobre
+os 90s do outro lado).
+
 ### Pendências conhecidas (ver ARQUITETURA.md e TODO.md)
 - Slash commands de ação que dependem da GAIA (`/abrir`, `/jornalista`
   etc.) não foram migrados - desenho fechado, implementação para depois.
