@@ -11,7 +11,9 @@ import numpy as np
 class VoiceFilterRMS:
     LIMIAR_RMS = 500
 
-    def is_human_voice(self, audio_data, rate=16000):
+    def calcular_rms(self, audio_data):
         audio_int16 = np.frombuffer(audio_data, dtype=np.int16)
-        rms = np.sqrt(np.mean(audio_int16.astype(np.float64) ** 2))
-        return rms > self.LIMIAR_RMS
+        return np.sqrt(np.mean(audio_int16.astype(np.float64) ** 2))
+
+    def is_human_voice(self, audio_data, rate=16000):
+        return self.calcular_rms(audio_data) > self.LIMIAR_RMS

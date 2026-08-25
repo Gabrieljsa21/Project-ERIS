@@ -24,6 +24,9 @@ SILENCIO_MAXIMO_SEGUNDOS = 0.8
 DURACAO_MINIMA_FALA_SEGUNDOS = 0.3
 
 
+INTERVALO_DIAGNOSTICO_SEGUNDOS = 2.0  # 🔥 ver docstring de _logar_diagnostico abaixo
+
+
 class BufferParticipante:
     """Recebe PCM 48kHz estéreo (Discord) aos poucos, converte pra 16kHz mono
     (formato que o Whisper da GAIA já espera) e decide onde a fala termina
@@ -39,11 +42,22 @@ class BufferParticipante:
         self._falando = False
         self._ultimo_chunk_com_voz = None
         self._frames_16k_da_fala = []
+        # 🔥 Diagnóstico (2026-08-25) - achado real: nem ERIS nem GAIA logavam
+        # NADA quando a call não respondia, sem dar pra saber se o pacote de
+        # áudio sequer chegava até aqui, ou se chegava mas o RMS nunca passava
+        # do limiar (LIMIAR_RMS). Log inicial (1x, confirma que o SSRC resolveu
+        # pra este usuário e pacotes estão chegando de verdade) + throttle
+        # periódico com o RMS de verdade, pra dar pra calibrar LIMIAR_RMS sem
+        # florar o log a cada pacote (~50/s por participante).
+        print(f" [ERIS] Recebendo áudio de {getattr(user, 'display_name', user)} (SSRC resolvido, começando a capturar).")
+        self._ultimo_log_diagnostico = 0.0
 
     def receber(self, pcm_48k_estereo):
         mono_16k = self._converter(pcm_48k_estereo)
-        eh_voz = self._voice_filter.is_human_voice(mono_16k, rate=TAXA_SAIDA)
+        rms = self._voice_filter.calcular_rms(mono_16k)
+        eh_voz = rms > VoiceFilterRMS.LIMIAR_RMS
         agora = time.monotonic()
+        self._logar_diagnostico(agora, rms, eh_voz)
         if eh_voz:
             self._frames_16k_da_fala.append(mono_16k)
             self._falando = True
@@ -55,6 +69,12 @@ class BufferParticipante:
             self._frames_16k_da_fala.append(mono_16k)
             if agora - self._ultimo_chunk_com_voz > SILENCIO_MAXIMO_SEGUNDOS:
                 self._fechar_fala()
+
+    def _logar_diagnostico(self, agora, rms, eh_voz):
+        if agora - self._ultimo_log_diagnostico < INTERVALO_DIAGNOSTICO_SEGUNDOS:
+            return
+        self._ultimo_log_diagnostico = agora
+        print(f" [ERIS] Diagnóstico voz: RMS={rms:.0f} (limiar {VoiceFilterRMS.LIMIAR_RMS}) - {'detectando fala' if eh_voz else 'silêncio/ruído'}.")
 
     def _converter(self, pcm_48k_estereo):
         mono_48k = audioop.tomono(pcm_48k_estereo, 2, 0.5, 0.5)
@@ -69,7 +89,10 @@ class BufferParticipante:
         self._falando = False
         duracao_segundos = sum(len(f) for f in frames) / 2 / TAXA_SAIDA
         if duracao_segundos >= DURACAO_MINIMA_FALA_SEGUNDOS:
+            print(f" [ERIS] Fala fechada ({duracao_segundos:.1f}s) - mandando pra GAIA processar.")
             self._ao_fechar_fala(self.user, frames)
+        else:
+            print(f" [ERIS] Fala fechada curta demais ({duracao_segundos:.1f}s < {DURACAO_MINIMA_FALA_SEGUNDOS}s) - descartada.")
 
 
 class SinkVoz(voice_recv.AudioSink):
@@ -81,13 +104,21 @@ class SinkVoz(voice_recv.AudioSink):
         super().__init__()
         self._ao_fechar_fala = ao_fechar_fala
         self._buffers = {}
+        self._ja_avisou_user_none = False
 
     def wants_opus(self):
         return False  # PCM já decodificado - a extensão faz o decode de Opus pra gente
 
     def write(self, user, data):
         if user is None:
-            return  # SSRC ainda não resolvido pra um membro de verdade - descarta
+            # 🔥 Diagnóstico (2026-08-25) - log 1x por sessão (não por pacote,
+            # senão floraria o log) pra saber se ESTE é o motivo de nunca
+            # capturar nada: SSRC nunca resolvido pra um Member de verdade
+            # (precisa do member já em cache - intents.members, ver eris/bot.py).
+            if not self._ja_avisou_user_none:
+                self._ja_avisou_user_none = True
+                print(" [ERIS] Pacote de áudio recebido, mas SSRC ainda não resolveu pra nenhum usuário (descartando) - se isso persistir, o problema é resolução de SSRC, não VAD.")
+            return
         buffer = self._buffers.get(user.id)
         if buffer is None:
             buffer = BufferParticipante(user, self._ao_fechar_fala)
