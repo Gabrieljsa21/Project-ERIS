@@ -7,6 +7,7 @@ Discord), continua rodando/respondendo moderação e exportação mesmo se a
 GAIA estiver fechada - só a conversa/comandos que dependem de conteúdo
 ficam indisponíveis nesse caso (ver `eris/bot.py`)."""
 import asyncio
+import datetime
 import os
 import socket
 import subprocess
@@ -24,7 +25,68 @@ from eris import bot, db  # noqa: E402
 from eris.api_bridge import iniciar_servidor_api  # noqa: E402
 from eris.config import PORTA_INSTANCIA_UNICA  # noqa: E402
 
+PASTA_PROJETO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _socket_instancia_unica = None
+
+
+class _RedirecionadorLog:
+    """Espelha stdout/stderr pra `logs/AAAA-MM-DD.log` (reabre sozinho se o
+    processo atravessar a meia-noite) - achado real 2026-08-25, depurando por
+    que o Modo Conversa não respondia numa call: `pythonw.exe` (sem console,
+    como o ERIS sempre roda em produção) descarta todo `print()` no vazio, e
+    não sobra NENHUM registro pra diagnosticar o que deu errado aqui (do lado
+    da GAIA só se vê o efeito - "não chegou pedido nenhum" - nunca a causa).
+    Mesmo espírito do `LogRedirector` da GAIA (`ui/qt_painel.py`), bem mais
+    simples - sem widget de Painel pra espelhar (o ERIS não tem GUI)."""
+
+    def __init__(self, stream_original):
+        self._stream_original = stream_original
+        self._arquivo = None
+        self._data_arquivo = None
+
+    def _garantir_arquivo(self):
+        hoje = datetime.date.today().isoformat()
+        if self._arquivo is not None and self._data_arquivo == hoje:
+            return
+        if self._arquivo is not None:
+            try:
+                self._arquivo.close()
+            except Exception:
+                pass
+        try:
+            pasta_logs = os.path.join(PASTA_PROJETO, "logs")
+            os.makedirs(pasta_logs, exist_ok=True)
+            self._arquivo = open(os.path.join(pasta_logs, f"{hoje}.log"), "a", encoding="utf-8")
+            self._data_arquivo = hoje
+        except Exception:
+            self._arquivo = None
+
+    def write(self, texto):
+        if self._stream_original:
+            try:
+                self._stream_original.write(texto)
+            except Exception:
+                pass
+        self._garantir_arquivo()
+        if self._arquivo:
+            try:
+                self._arquivo.write(texto)
+                self._arquivo.flush()
+            except Exception:
+                pass
+
+    def flush(self):
+        for destino in (self._stream_original, self._arquivo):
+            if destino:
+                try:
+                    destino.flush()
+                except Exception:
+                    pass
+
+
+def _ativar_log_em_disco():
+    sys.stdout = _RedirecionadorLog(sys.stdout)
+    sys.stderr = _RedirecionadorLog(sys.stderr)
 
 
 def _garantir_instancia_unica():
@@ -46,13 +108,12 @@ def _mostrar_versao_boot():
     versão bem mais antiga do que o código no disco agora, sem nenhum
     aviso visual óbvio. Falha em silêncio se `git` não estiver disponível."""
     try:
-        pasta = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         commit = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"], cwd=pasta,
+            ["git", "rev-parse", "--short", "HEAD"], cwd=PASTA_PROJETO,
             capture_output=True, text=True, timeout=3,
         ).stdout.strip()
         resumo = subprocess.run(
-            ["git", "log", "-1", "--format=%cd %s", "--date=format:%d/%m %H:%M"], cwd=pasta,
+            ["git", "log", "-1", "--format=%cd %s", "--date=format:%d/%m %H:%M"], cwd=PASTA_PROJETO,
             capture_output=True, text=True, timeout=3,
         ).stdout.strip()
         if commit:
@@ -62,6 +123,7 @@ def _mostrar_versao_boot():
 
 
 def main():
+    _ativar_log_em_disco()
     _garantir_instancia_unica()
     _mostrar_versao_boot()
 
