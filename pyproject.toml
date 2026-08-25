@@ -13,10 +13,13 @@ dependencies = [
 ]
 # 🔥 discord-ext-voice-recv/PyNaCl/numpy (2026-08-25) - recepção de áudio de voz
 # pro Modo Intérprete/Tutora (ver eris/core/voz_captura.py, eris/core/vad.py).
-# libopus não precisa ser instalado à parte no Windows - discord.py já embute o
-# DLL (`discord/bin/libopus-0.x64.dll`) e carrega sozinho via
-# `opus._load_default()`. Também precisa do ffmpeg (conversão de voz nativa, já
-# usado por eris/core/voz_nativa.py) pra tocar o áudio sintetizado na call.
+# libopus não precisa ser INSTALADO à parte no Windows - discord.py já embute o
+# DLL (`discord/bin/libopus-0.x64.dll`) - mas precisa ser CARREGADO explicitamente
+# em runtime (`discord.opus._load_default()`, ver eris/bot.py::iniciar_bot) - a
+# lib NÃO faz isso sozinha no import (achado real 2026-08-25: sem essa chamada, a
+# call conecta normal mas não ouve nem fala nada, em silêncio). Também precisa do
+# ffmpeg (conversão de voz nativa, já usado por eris/core/voz_nativa.py) pra tocar
+# o áudio sintetizado na call.
 
 [build-system]
 requires = ["setuptools>=68"]

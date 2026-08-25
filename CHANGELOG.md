@@ -36,6 +36,9 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
   interprete/{iniciar,encerrar,turno}`, `GET /eris/tutora/status`,
   `POST /eris/tutora/turno`).
 
+### Correções
+- **Intérprete/Tutora entravam na call mas não ouviam nem falavam nada** - achado pelo usuário na prática ("Quando eu peço ela p entrar na call, ela entra mas n conversa comigo"). Causa raiz: discord.py embute o DLL do libopus no pacote, mas NÃO carrega ele automaticamente no import (só versões bem antigas da lib faziam isso) - sem `discord.opus.load_opus`/`_load_default()`, a conexão de voz em si funciona (não depende de opus), mas a decodificação do áudio recebido (`discord-ext-voice-recv`) e o encode do áudio de resposta falham em silêncio, sem nenhum erro visível no Discord. Corrigido chamando `discord.opus._load_default()` no início de `iniciar_bot` (`eris/bot.py`), com aviso no log se falhar.
+
 ### Pendências conhecidas (ver ARQUITETURA.md e TODO.md)
 - Slash commands de ação que dependem da GAIA (`/abrir`, `/jornalista`
   etc.) não foram migrados - desenho fechado, implementação para depois.
