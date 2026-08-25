@@ -90,6 +90,21 @@ saber se a reprodução falhava em silêncio ou se o problema era outro
 `Project G.A.I.A/assistant/docs/CORRECOES.md`). Adicionado log de início/
 fim/erro da reprodução.
 
+### Diagnóstico de criptografia DAVE no ENVIO (2026-08-25, 2ª rodada)
+
+Com o conteúdo corrigido do lado da GAIA e a captura funcionando de
+verdade, a reprodução continuava "concluída sem erro" mas inaudível pro
+usuário. Achado real no código do `discord.py`
+(`VoiceClient._get_voice_packet`): o pacote de ENVIO só é criptografado
+com DAVE (`dave_session.encrypt_opus`) se `_connection.can_encrypt` for
+`True` (== sessão DAVE "ready") - senão vai sem a camada DAVE, e um
+cliente humano com DAVE ativo (obrigatório desde março/2026) provavelmente
+descarta isso em silêncio, sem gerar erro nenhum do nosso lado (`.play()`
+sempre reporta sucesso, mesmo mandando pacote sem DAVE). Log direto do
+estado real da sessão (`dave_session`/`can_encrypt`/`ready`) adicionado em
+`_tocar` ANTES de tocar, pra confirmar/descartar essa hipótese na próxima
+call real.
+
 ### Pendências conhecidas (ver ARQUITETURA.md e TODO.md)
 - Slash commands de ação que dependem da GAIA (`/abrir`, `/jornalista`
   etc.) não foram migrados - desenho fechado, implementação para depois.
