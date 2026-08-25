@@ -301,6 +301,20 @@ async def iniciar_bot(token):
     global _client_atual, _loop_atual, _slash_ja_sincronizado
     _loop_atual = asyncio.get_running_loop()
 
+    # 🔥 2026-08-25 - achado real (ela entrava na call mas não ouvia nem falava
+    # nada): discord.py EMBUTE o DLL do libopus (`discord/bin/libopus-0.x64.dll`),
+    # mas não carrega ele sozinho no import (isso só existia em versões bem
+    # antigas da lib) - sem isso, tanto a decodificação de áudio recebido
+    # (discord-ext-voice-recv, ver eris/core/voz_captura.py) quanto o encode do
+    # que a GAIA manda de volta (`SessaoVoz._tocar`) falham em silêncio (excessão
+    # engolida pelo try/except do worker, sem nenhum aviso visível no Discord).
+    if not discord.opus.is_loaded():
+        discord.opus._load_default()
+        if discord.opus.is_loaded():
+            print(" [SISTEMA] libopus carregado (voz na call habilitada).")
+        else:
+            print(" [SISTEMA] ATENÇÃO: não consegui carregar o libopus - Intérprete/Tutora por voz não vão funcionar (entra na call, mas não ouve nem fala nada).")
+
     intents = discord.Intents.default()
     intents.message_content = True
     intents.members = True  # 🔥 exigido pra moderação de membro (kick/ban/timeout/cargo) funcionar de forma confiável
