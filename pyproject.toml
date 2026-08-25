@@ -1,7 +1,7 @@
 [project]
 name = "eris"
 version = "0.1.0"
-description = "Bot de Discord da G.A.I.A. - conexão, segurança, mensagens, moderação, exportação e voz como transporte; processo próprio, sem interface gráfica, consumido pela GAIA via HTTP (webhook reverso pra conteúdo)."
+description = "Bot de Discord da GAIA - conexão, segurança, mensagens, moderação, exportação e voz como transporte; processo próprio, sem interface gráfica, consumido pela GAIA via HTTP (webhook reverso pra conteúdo)."
 requires-python = ">=3.11"
 dependencies = [
     "discord.py>=2.7",
