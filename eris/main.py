@@ -9,6 +9,7 @@ ficam indisponíveis nesse caso (ver `eris/bot.py`)."""
 import asyncio
 import os
 import socket
+import subprocess
 import sys
 import threading
 
@@ -39,8 +40,30 @@ def _garantir_instancia_unica():
         sys.exit(1)
 
 
+def _mostrar_versao_boot():
+    """Mesmo raciocínio do `run.py` da GAIA (2026-08-25) - Python nunca
+    recarrega código sozinho, então um ERIS de pé pode estar rodando uma
+    versão bem mais antiga do que o código no disco agora, sem nenhum
+    aviso visual óbvio. Falha em silêncio se `git` não estiver disponível."""
+    try:
+        pasta = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        commit = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"], cwd=pasta,
+            capture_output=True, text=True, timeout=3,
+        ).stdout.strip()
+        resumo = subprocess.run(
+            ["git", "log", "-1", "--format=%cd %s", "--date=format:%d/%m %H:%M"], cwd=pasta,
+            capture_output=True, text=True, timeout=3,
+        ).stdout.strip()
+        if commit:
+            print(f" [SISTEMA] Código carregado: commit {commit} - {resumo}")
+    except Exception:
+        pass
+
+
 def main():
     _garantir_instancia_unica()
+    _mostrar_versao_boot()
 
     token = os.getenv("DISCORD_BOT_TOKEN")
     if not token:
