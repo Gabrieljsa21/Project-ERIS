@@ -1,4 +1,4 @@
-# Arquitetura do Project-ERIS
+# Arquitetura do Project ERIS
 
 Extraído da GAIA em 2026-08-24 (ver `Project G.A.I.A/assistant/docs/ECOSSISTEMA_PROJETOS.md`
 -> "Project ERIS" e `docs/TODO.md` -> "Arquitetura do ecossistema"). Diferente
