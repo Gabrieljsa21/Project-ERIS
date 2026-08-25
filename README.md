@@ -1,6 +1,6 @@
 # Project-ERIS
 
-Bot de Discord da G.A.I.A. - conexão, segurança, mensagens, moderação,
+Bot de Discord da GAIA - conexão, segurança, mensagens, moderação,
 exportação e voz (como transporte). Processo próprio, **sem interface
 gráfica** - só uma ponte HTTP; quem decide O QUE a persona responde é
 sempre a [GAIA](../Project%20G.A.I.A) (assistente pessoal do mesmo autor),
