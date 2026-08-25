@@ -41,6 +41,7 @@ class SessaoVoz:
         self._vc = await voice_channel.connect(cls=voice_recv.VoiceRecvClient)
         self._vc.listen(SinkVoz(self._on_fala_fechada_thread_externa))
         self._worker_task = asyncio.create_task(self._worker())
+        print(f" [ERIS] Sessão de voz ({self.modo}) conectada em \"{voice_channel.name}\" e ouvindo (VoiceRecvClient.listen ativo).")
 
     async def sair(self):
         if self._worker_task:
