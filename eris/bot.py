@@ -20,14 +20,23 @@ from eris import db
 from eris.core import mensagens, moderacao, seguranca, voz_call
 from eris.integrations import gaia_webhook
 
-# 🔥 Gatilho por menção do Modo Intérprete (portado de discord_bot.py) - "@Gala
-# entra"/"@Gala traduz" pra entrar na call, "@Gala sai" pra sair. Casa em
+# 🔥 Gatilho por menção pros 3 modos de voz (portado de discord_bot.py,
+# Conversa adicionada em 2026-08-25) - "@Gala entra"/"@Gala conversa" pra
+# bate-papo comum, "@Gala traduz" especificamente pro Intérprete, "@Gala sai"
+# pra sair (de qualquer um dos 3, ver voz_call.sair_qualquer). Casa em
 # qualquer lugar da frase - não precisa ser a frase inteira. Só o dono aciona
 # (mesma trava de segurança de qualquer ação real do sistema), e roda ANTES do
 # filtro normal de roteamento - entrar/sair da call não é "conversa livre", é
 # comando, então funciona mesmo com "Responder livremente"/"menções" desligado.
-_PADRAO_INTERPRETE_ENTRAR = re.compile(r'\b(entra|entrar|traduz|traduzir)\b', re.IGNORECASE)
-_PADRAO_INTERPRETE_SAIR = re.compile(r'\bsai(r)?\b', re.IGNORECASE)
+# 🔥 ORDEM IMPORTA: Intérprete exige palavra EXPLÍCITA de tradução - "entra"
+# sozinho (sem "traduz") NÃO é mais Intérprete (bug real 2026-08-25: "@Gala
+# entra na call" sempre acionava o Intérprete, mesmo quem só queria bater um
+# papo comum) - checado primeiro pra vencer se as duas palavras aparecerem
+# juntas ("entra e traduz"). "entra"/"entrar" bem genérico agora vira Conversa,
+# que é o comportamento que a maioria espera de um "entra" sem qualificação.
+_PADRAO_INTERPRETE_ENTRAR = re.compile(r'\b(traduz|traduzir|tradução|tradutor|intérprete|interprete)\b', re.IGNORECASE)
+_PADRAO_CONVERSA_ENTRAR = re.compile(r'\b(entra|entrar|conversa|conversar|bate.?papo)\b', re.IGNORECASE)
+_PADRAO_SAIR = re.compile(r'\bsai(r)?\b', re.IGNORECASE)
 
 _client_atual = None
 _loop_atual = None
@@ -244,12 +253,32 @@ async def _somente_dono_em_call(interaction):
 
 
 def _registrar_slash_voz(tree):
-    """Modo Intérprete e Modo Tutora por voz - migrados pro ERIS em
-    2026-08-25 (ver `eris/core/voz_call.py`). A GAIA continua decidindo todo
-    conteúdo (transcrição/tradução/resposta/síntese); aqui só entra/sai da
-    call."""
+    """Modo Conversa, Modo Intérprete e Modo Tutora por voz - migrados pro
+    ERIS em 2026-08-25 (ver `eris/core/voz_call.py`). A GAIA continua
+    decidindo todo conteúdo (transcrição/tradução/resposta/síntese); aqui só
+    entra/sai da call."""
+    grupo_conversar = app_commands.Group(name="conversar", description="Bate-papo comum por voz com a Galateia (sem tradução, sem prática de idioma)")
     grupo_interprete = app_commands.Group(name="interprete", description="Modo Intérprete - tradução de voz ao vivo numa call")
     grupo_tutora = app_commands.Group(name="tutora", description="Modo Tutora - pratique um idioma por voz com a Galateia")
+
+    @grupo_conversar.command(name="entrar", description="A Gala entra na sua call de voz atual pra bater um papo comum")
+    async def _conversar_entrar(interaction: discord.Interaction):
+        canal = await _somente_dono_em_call(interaction)
+        if canal is None:
+            return
+        await interaction.response.defer()
+        ok, mensagem = await voz_call.entrar_conversa(canal)
+        await interaction.followup.send(mensagem, ephemeral=not ok)
+
+    @grupo_conversar.command(name="sair", description="A Gala sai da call de voz")
+    async def _conversar_sair(interaction: discord.Interaction):
+        if not await _somente_dono(interaction):
+            return
+        if interaction.guild is None:
+            await interaction.response.send_message("Isso só funciona dentro de um servidor (não numa DM).", ephemeral=True)
+            return
+        mensagem = await voz_call.sair_conversa(interaction.guild.id)
+        await interaction.response.send_message(mensagem)
 
     @grupo_interprete.command(name="entrar", description="A Gala entra na sua call de voz atual e começa a traduzir")
     async def _interprete_entrar(interaction: discord.Interaction):
@@ -289,6 +318,7 @@ def _registrar_slash_voz(tree):
         mensagem = await voz_call.sair_tutora(interaction.guild.id)
         await interaction.response.send_message(mensagem or "Eu não tava na call da Tutora nesse servidor.")
 
+    tree.add_command(grupo_conversar)
     tree.add_command(grupo_interprete)
     tree.add_command(grupo_tutora)
 
@@ -416,8 +446,16 @@ async def iniciar_bot(token):
                     ok, resposta = await voz_call.entrar_interprete(voice_state.channel)
                     await message.channel.send(resposta)
                 return
-            if _PADRAO_INTERPRETE_SAIR.search(texto_sem_mencao):
-                resposta = await voz_call.sair_interprete(message.guild.id)
+            if _PADRAO_CONVERSA_ENTRAR.search(texto_sem_mencao):
+                voice_state = getattr(message.author, "voice", None)
+                if voice_state is None or voice_state.channel is None:
+                    await message.channel.send("Você precisa estar numa call de voz do servidor pra eu entrar.")
+                else:
+                    ok, resposta = await voz_call.entrar_conversa(voice_state.channel)
+                    await message.channel.send(resposta)
+                return
+            if _PADRAO_SAIR.search(texto_sem_mencao):
+                resposta = await voz_call.sair_qualquer(message.guild.id)
                 await message.channel.send(resposta)
                 return
 

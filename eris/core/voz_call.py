@@ -75,10 +75,18 @@ class SessaoVoz:
             if resultado is None:
                 return
             await self._tocar(resultado["caminho_audio"])
-        else:  # tutora - só o dono alimenta essa conversa
+        elif self.modo == "tutora":  # só o dono alimenta essa conversa
             if not seguranca.eh_dono(user.id):
                 return
             caminho_audio = await asyncio.to_thread(gaia_webhook.pedir_turno_tutora, self.guild_id, audio_bytes)
+            if caminho_audio is None:
+                return
+            await self._tocar(caminho_audio)
+        else:  # conversa - bate-papo comum, qualquer participante pode falar
+            eh_dono = seguranca.eh_dono(user.id)
+            caminho_audio = await asyncio.to_thread(
+                gaia_webhook.pedir_turno_conversa, self.guild_id, user.id, user.display_name, eh_dono, audio_bytes,
+            )
             if caminho_audio is None:
                 return
             await self._tocar(caminho_audio)
@@ -150,14 +158,37 @@ async def sair_tutora(guild_id):
     return "Saí da call."
 
 
+async def entrar_conversa(voice_channel):
+    guild_id = voice_channel.guild.id
+    if guild_id in _sessoes:
+        return False, "Eu já tô numa call de voz nesse servidor - sai primeiro se quiser trocar de canal/modo."
+    sessao = SessaoVoz(guild_id, "conversa")
+    try:
+        await sessao.entrar(voice_channel)
+    except Exception as e:
+        return False, f"Não consegui entrar na call: {e}"
+    _sessoes[guild_id] = sessao
+    return True, f"Entrei em **{voice_channel.name}** - bora conversar."
+
+
+async def sair_conversa(guild_id):
+    sessao = _sessoes.get(guild_id)
+    if not sessao or sessao.modo != "conversa":
+        return "Eu não tava numa call de conversa nesse servidor."
+    del _sessoes[guild_id]
+    await sessao.sair()
+    return "Saí da call."
+
+
 async def sair_qualquer(guild_id):
     """Usado pelo auto-leave (canal ficou sem nenhum humano, ver
-    eris/bot.py::on_voice_state_update) - não precisa saber o modo de
-    antemão."""
+    eris/bot.py::on_voice_state_update) e pelo gatilho de menção "@Gala sai"
+    (ver eris/bot.py::on_message) - não precisa saber o modo de antemão."""
     sessao = _sessoes.get(guild_id)
     if not sessao:
-        return
+        return "Eu não tava em nenhuma call de voz nesse servidor."
     if sessao.modo == "interprete":
-        await sair_interprete(guild_id)
-    else:
-        await sair_tutora(guild_id)
+        return await sair_interprete(guild_id)
+    if sessao.modo == "tutora":
+        return await sair_tutora(guild_id)
+    return await sair_conversa(guild_id)

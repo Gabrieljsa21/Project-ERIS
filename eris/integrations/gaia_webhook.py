@@ -62,6 +62,26 @@ def pedir_resposta_persona(texto, eh_dono, remetente_id, remetente_nome, channel
 
 
 # --------------------------------------------------------------------------
+# Modo Conversa (bate-papo comum por voz numa call do Discord - sem tradução,
+# sem prática de idioma, sem sessão prévia nenhuma)
+# --------------------------------------------------------------------------
+
+def pedir_turno_conversa(guild_id, speaker_id, speaker_nome, eh_dono, audio_pcm_16k_mono):
+    """Mesma ideia de `pedir_turno_tutora`, mas sem exigir sessão prévia -
+    qualquer participante pode falar (a GAIA decide o tom da resposta a
+    partir de `eh_dono`, mesmo raciocínio de `pedir_resposta_persona` pra
+    mensagem de texto). Devolve o caminho local do áudio de resposta, ou
+    None."""
+    resultado = _post("/eris/conversa/turno", {
+        "guild_id": str(guild_id), "speaker_id": str(speaker_id), "speaker_nome": speaker_nome,
+        "eh_dono": bool(eh_dono), "audio_b64": base64.b64encode(audio_pcm_16k_mono).decode("ascii"),
+    }, timeout=TIMEOUT_TURNO_VOZ_SEGUNDOS)
+    if not resultado or not resultado.get("caminho_audio"):
+        return None
+    return resultado.get("caminho_audio")
+
+
+# --------------------------------------------------------------------------
 # Modo Intérprete (tradução de voz ao vivo numa call do Discord)
 # --------------------------------------------------------------------------
 

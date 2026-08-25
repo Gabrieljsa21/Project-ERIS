@@ -60,25 +60,28 @@ GAIA, porta 8766) toda vez que uma mensagem passa pelo filtro local de
 roteamento - ver `eris/core/seguranca.py` pro contrato completo e
 `eris/api_bridge.py` pro HTTP completo.
 
-## Modo Intérprete e Modo Tutora por voz (migrados em 2026-08-25)
+## Modo Conversa, Modo Intérprete e Modo Tutora por voz (migrados em 2026-08-25)
 
-`/interprete entrar`/`sair` e `/tutora entrar`/`sair` (também por menção,
-"@Gala entra"/"traduz"/"sai", pro Intérprete) - o ERIS entra na call,
-captura o áudio de cada participante até a pausa (`eris/core/
-voz_captura.py`, RMS) e manda pra GAIA em turnos (`eris/core/
-voz_call.py` + `eris/integrations/gaia_webhook.py`); a GAIA continua dona
-de STT/LLM/TTS (transcrição, tradução ou resposta, síntese) e devolve o
-caminho local do áudio pra tocar na call. Tutora por voz exige uma sessão
-de texto já iniciada (`/iniciar_tutora <idioma>`, por DM/menção) - o
-comando de voz só entra na call, não inicia a sessão.
+`/conversar entrar`/`sair`, `/interprete entrar`/`sair` e `/tutora
+entrar`/`sair` (também por menção - "@Gala entra"/"conversa" pro Modo
+Conversa, "@Gala traduz" pro Intérprete, "@Gala sai" pra qualquer um dos
+três) - o ERIS entra na call, captura o áudio de cada participante até a
+pausa (`eris/core/voz_captura.py`, RMS) e manda pra GAIA em turnos
+(`eris/core/voz_call.py` + `eris/integrations/gaia_webhook.py`); a GAIA
+continua dona de STT/LLM/TTS (transcrição, tradução ou resposta, síntese) e
+devolve o caminho local do áudio pra tocar na call. Modo Conversa é
+bate-papo comum, sem exigir nada antes; Tutora por voz exige uma sessão de
+texto já iniciada (`/iniciar_tutora <idioma>`, por DM/menção) - o comando de
+voz só entra na call, não inicia a sessão.
 
 ## Estado da extração (2026-08-24/25)
 
 Conexão, segurança (donos, rate limit, filtro de roteamento), mensagens
 (DM/canal/categoria/anexos/mensagem de voz nativa), exportação, moderação
 (membro/mensagem/canal/cargo, tudo novo, nunca existiu na GAIA) e Modo
-Intérprete/Tutora por voz completos e com sintaxe/import verificados.
-**Ainda não validado contra um servidor Discord real** - antes de confiar
-no dia a dia, testar: conectar com um token real, uma conversa por DM de
-ponta a ponta, um comando de moderação, uma exportação de canal, e
-`/interprete entrar`/`/tutora entrar` numa call de voz real.
+Conversa/Intérprete/Tutora por voz completos e com sintaxe/import
+verificados. **Ainda não validado contra um servidor Discord real** - antes
+de confiar no dia a dia, testar: conectar com um token real, uma conversa
+por DM de ponta a ponta, um comando de moderação, uma exportação de canal,
+e `/conversar entrar`/`/interprete entrar`/`/tutora entrar` numa call de voz
+real.

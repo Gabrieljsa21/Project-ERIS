@@ -28,13 +28,20 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
   CANAL (JSON)" do Painel da GAIA, agora também acionável direto no
   Discord ou via HTTP (`POST /exportar`).
 - **Modo Intérprete e Modo Tutora por voz migrados (2026-08-25)** -
-  `/interprete entrar/sair` (também por menção, "entra"/"traduz"/"sai") e
-  `/tutora entrar/sair`. O ERIS entra na call, captura o áudio por
-  participante até a pausa e toca o áudio de resposta
-  (`eris/core/voz_call.py`, `voz_captura.py`, `vad.py`); a GAIA continua
-  dona de STT/LLM/TTS via webhook reverso por turno (`POST /eris/
-  interprete/{iniciar,encerrar,turno}`, `GET /eris/tutora/status`,
+  `/interprete entrar/sair` (também por menção, "traduz"/"tradução"/
+  "intérprete" pra entrar, "sai" pra sair) e `/tutora entrar/sair`. O ERIS
+  entra na call, captura o áudio por participante até a pausa e toca o
+  áudio de resposta (`eris/core/voz_call.py`, `voz_captura.py`, `vad.py`); a
+  GAIA continua dona de STT/LLM/TTS via webhook reverso por turno (`POST
+  /eris/interprete/{iniciar,encerrar,turno}`, `GET /eris/tutora/status`,
   `POST /eris/tutora/turno`).
+- **Modo Conversa por voz (2026-08-25)** - terceiro modo de voz na call,
+  bate-papo comum com a Galateia sem tradução (Intérprete) nem prática de
+  idioma (Tutora), sem exigir nenhuma sessão prévia. `/conversar entrar/
+  sair`, também por menção ("entra"/"entrar"/"conversa"/"conversar" - o
+  gatilho genérico "entra" que antes sempre acionava o Intérprete agora cai
+  aqui). Qualquer participante da call pode falar, não só o dono. Endpoint
+  novo `POST /eris/conversa/turno`.
 
 ### Correções
 - **Intérprete/Tutora entravam na call mas não ouviam nem falavam nada** - achado pelo usuário na prática ("Quando eu peço ela p entrar na call, ela entra mas n conversa comigo"). Causa raiz: discord.py embute o DLL do libopus no pacote, mas NÃO carrega ele automaticamente no import (só versões bem antigas da lib faziam isso) - sem `discord.opus.load_opus`/`_load_default()`, a conexão de voz em si funciona (não depende de opus), mas a decodificação do áudio recebido (`discord-ext-voice-recv`) e o encode do áudio de resposta falham em silêncio, sem nenhum erro visível no Discord. Corrigido chamando `discord.opus._load_default()` no início de `iniciar_bot` (`eris/bot.py`), com aviso no log se falhar.

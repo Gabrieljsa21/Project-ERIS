@@ -23,7 +23,7 @@ o fraseio continua sendo persona, e fica com a GAIA.
 | Slash commands de ação (`/abrir` etc.) | **fora do escopo desta v1** | ver "Pendências" abaixo |
 | Moderação/administração | ✅ 100% local, zero IA | - |
 | Exportação de canal | ✅ | - |
-| Voz (Intérprete/Tutora) | ✅ conexão/captura/playback (`eris.core.voz_call`) | ✅ transcrição/tradução/resposta/síntese via webhook |
+| Voz (Conversa/Intérprete/Tutora) | ✅ conexão/captura/playback (`eris.core.voz_call`) | ✅ transcrição/tradução/resposta/síntese via webhook |
 | Notificações proativas (Hidratação, Steam, etc.) | executa a entrega | ✅ decide se/quando/o quê |
 
 ## Os 4 pontos que precisaram de desenho novo
@@ -64,6 +64,18 @@ cada um foi decidido explicitamente antes de escrever código (conversa de
    uma função simples em `run.py`, sem precisar de estado por guild).
    Endpoints novos: `POST /eris/interprete/{iniciar,encerrar,turno}`,
    `GET /eris/tutora/status`, `POST /eris/tutora/turno`.
+
+   **Modo Conversa adicionado no mesmo dia** - achado do usuário testando na
+   prática: pedir pra ela "entrar na call" acionava sempre o Intérprete
+   (única palavra-gatilho genérica era "entra"), mesmo quando o pedido era
+   só bate-papo comum, sem tradução nem prática de idioma. Terceiro modo,
+   mesmo padrão dos outros dois (turno-a-turno, sem sessão prévia, qualquer
+   participante pode falar) - `eris.core.voz_call.SessaoVoz` ganhou um 3º
+   valor de `modo` ("conversa"), endpoint novo `POST /eris/conversa/turno`.
+   O gatilho por menção foi reordenado: Intérprete agora exige palavra
+   EXPLÍCITA de tradução ("traduz"/"tradução"/"intérprete"); "entra"/
+   "entrar"/"conversa" sozinho vira Modo Conversa, que é o comportamento que
+   a maioria espera de um "entra" sem qualificação.
 
 ## Por que processo próprio (padrão IRIS/MOIRAI/HESTIA), não padrão Argus
 
