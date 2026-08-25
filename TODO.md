@@ -23,19 +23,23 @@ existe pronto pra copiar do lado da GAIA.
 **Prioridade:** Alta | **Complexidade:** Baixa
 
 Nenhum dos módulos foi testado com um token/servidor de verdade ainda (o
-ambiente onde foram escritos não tem acesso a isso). Antes de confiar no
-dia a dia: conectar com um token real, uma conversa por DM de ponta a
-ponta (passando pelo webhook reverso até a GAIA), um comando de moderação
-de cada grupo (`/moderacao`, `/mensagem`, `/canal`, `/cargo`), uma
-exportação de canal (`/exportar`) - a voz por call (`/interprete
-entrar`/`/tutora entrar`/`/conversar entrar`) foi validada em 2026-08-25 e
-achou um bloqueio real, ver item "Voz na call não escuta nada" abaixo.
+ambiente onde foram escritos não tem acesso a isso), EXCETO a voz por call
+(`/conversar entrar`), validada de ponta a ponta com sucesso em
+2026-08-25 depois de uma sessão real de debugging (3 causas raiz
+distintas, ver "Voz na call - histórico do bloqueio DAVE e correção"
+abaixo). Ainda faltam: conectar com um token real focado em texto, uma
+conversa por DM de ponta a ponta, um comando de moderação de cada grupo
+(`/moderacao`, `/mensagem`, `/canal`, `/cargo`), uma exportação de canal
+(`/exportar`), e o mesmo teste de voz pro Intérprete/Tutora especificamente
+(só o Modo Conversa foi validado até agora).
 
-### Voz na call não escuta nada - bloqueado por DAVE (E2EE) do Discord
+### Voz na call - histórico do bloqueio DAVE e correção (RESOLVIDO em 2026-08-25)
 
-**Prioridade:** Alta | **Complexidade:** Alta (depende de terceiros) |
-**Status: correção candidata instalada em 2026-08-25, aguardando validação
-com call real**
+**Status: CONFIRMADO funcionando numa call real (2026-08-25) - "agora eu a
+escutei".** Fica registrado abaixo o histórico completo do diagnóstico
+(3 causas raiz distintas, cada uma mascarando a próxima) - útil se algo
+similar quebrar de novo. A dependência do fork ainda precisa ser commitada
+(ver final desta seção).
 
 Validado em 2026-08-25 com uma call real: `/conversar entrar` conecta,
 ativa a escuta (`VoiceRecvClient.listen`), e pacotes RTP CHEGAM de
@@ -84,8 +88,29 @@ confirmou que a decriptação em si funcionava; existe um erro ocasional
 `DecryptionFailed(UnencryptedWhenPassthroughDisabled)` tratável por
 re-escutar; e um bug NÃO resolvido de quem entra pelo Discord Web no
 Safari/iPhone não ser ouvido corretamente (edge case raro, sem
-reprodução/fix ainda). Ainda não validado numa call real com o usuário
-neste projeto - ver "Validar contra um servidor/bot Discord real" acima.
+reprodução/fix ainda).
+
+🔥 **Validado numa call real (2026-08-25) - 2 causas raiz ADICIONAIS
+encontradas depois do fix acima**, cada uma mascarando a seguinte (áudio
+chegava e era processado certo em cada etapa, só a etapa seguinte falhava
+em silêncio):
+1. **Reprodução "concluída sem erro" mas inaudível** - não era DAVE no
+   envio (`can_encrypt=True`/`dave_session.ready=True` confirmados em todo
+   teste, log de diagnóstico dedicado). Causa raiz de verdade:
+   `sintetizar_frase` (`Project G.A.I.A/assistant/core/voice/tts.py`)
+   sempre devolveu caminho RELATIVO do áudio - resolvia contra o cwd do
+   ERIS, não da GAIA, desde a extração pra processos separados. FFmpeg
+   falhava em achar o arquivo EM SILÊNCIO (discord.py não propaga isso
+   como exceção). Corrigido do lado da GAIA com `os.path.abspath()` (mesmo
+   bug também achado e corrigido na tag `<PRINT>`).
+2. **Sob carga pesada (Groq esgotando várias contas em sequência), o turno
+   às vezes não gerava resposta nenhuma** - `TIMEOUT_TURNO_VOZ_SEGUNDOS`
+   aqui (60s) era menor que o timeout do lado da GAIA pro mesmo turno
+   (90s, `integrations/iris_bridge.py`) - o ERIS desistia e fechava a
+   conexão ANTES da GAIA terminar de responder, e a resposta certa (já
+   gerada) se perdia num `ConnectionAbortedError` ao tentar escrever no
+   socket já fechado. Corrigido subindo pra 120s
+   (`eris/integrations/gaia_webhook.py`).
 
 **Existe uma 2ª PR concorrente**, [#56](https://github.com/imayhaveborkedit/discord-ext-voice-recv/pull/56),
 mais abrangente (trata vídeo/screenshare/SSRC desconhecido) mas o próprio
