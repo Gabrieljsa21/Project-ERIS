@@ -5,12 +5,18 @@ description = "Bot de Discord da G.A.I.A. - conexão, segurança, mensagens, mod
 requires-python = ">=3.11"
 dependencies = [
     "discord.py>=2.7",
+    "discord-ext-voice-recv",
+    "PyNaCl",
+    "numpy",
     "requests>=2.31",
     "python-dotenv",
 ]
-# 🔥 discord-ext-voice-recv/PyNaCl (recepção de áudio de voz) ficam de fora até o
-# Intérprete/Tutora por voz serem migrados pra cá (ver TODO.md) - v1 não captura
-# áudio nenhum, então não paga o custo de import (~0.3-0.4s) à toa.
+# 🔥 discord-ext-voice-recv/PyNaCl/numpy (2026-08-25) - recepção de áudio de voz
+# pro Modo Intérprete/Tutora (ver eris/core/voz_captura.py, eris/core/vad.py).
+# libopus não precisa ser instalado à parte no Windows - discord.py já embute o
+# DLL (`discord/bin/libopus-0.x64.dll`) e carrega sozinho via
+# `opus._load_default()`. Também precisa do ffmpeg (conversão de voz nativa, já
+# usado por eris/core/voz_nativa.py) pra tocar o áudio sintetizado na call.
 
 [build-system]
 requires = ["setuptools>=68"]
