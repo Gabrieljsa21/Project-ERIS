@@ -1,4 +1,4 @@
-# Project-ERIS
+# Project ERIS
 
 Bot de Discord da GAIA - conexão, segurança, mensagens, moderação,
 exportação e voz (como transporte). Processo próprio, **sem interface
@@ -21,7 +21,7 @@ Dourada da Discórdia.
 
 ## O contrato: funciona sozinho, ganha mais com a GAIA
 
-Igual ao [Project-ARGUS](../Project-ARGUS) no espírito (mesmo que o
+Igual ao [Project ARGUS](../Project-ARGUS) no espírito (mesmo que o
 mecanismo de integração seja diferente - ver ARQUITETURA.md), o ERIS
 standalone já é um bot funcional de verdade: conecta, modera (kick/ban/
 timeout/canal/cargo), exporta canal pra JSON, bloqueia bot/webhook, aplica
