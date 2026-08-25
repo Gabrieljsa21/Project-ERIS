@@ -8,6 +8,7 @@ GAIA estiver fechada - só a conversa/comandos que dependem de conteúdo
 ficam indisponíveis nesse caso (ver `eris/bot.py`)."""
 import asyncio
 import datetime
+import logging
 import os
 import socket
 import subprocess
@@ -89,6 +90,26 @@ def _ativar_log_em_disco():
     sys.stderr = _RedirecionadorLog(sys.stderr)
 
 
+def _ativar_log_debug_voice_recv():
+    """DEBUG só do `discord.ext.voice_recv` (não do discord.py inteiro - o
+    gateway de texto sozinho já loga heartbeat a cada ~40s, ruído demais pra
+    esse fim) - achado real 2026-08-25: os logs pontuais de `voz_captura.py`
+    (RMS/fala fechada) confirmaram que a call conecta e ativa a escuta sem
+    erro nenhum, mas NENHUM pacote chega no nosso Sink - nem o aviso de "SSRC
+    não resolvido" dispara. A própria lib loga em DEBUG se um pacote chegou e
+    foi IGNORADO (`PacketRouter.feed_rtp`: "Ignoring packet from dropped ssrc
+    %s") - sem ligar isso, não dá pra distinguir "pacote nunca chegou no
+    soquete" (rede/firewall) de "chegou mas foi descartado antes do Sink"
+    (bug na própria lib/versão). Chamado SÓ depois de _ativar_log_em_disco -
+    precisa que sys.stdout já seja o _RedirecionadorLog, pra este handler
+    escrever no mesmo lugar."""
+    logger = logging.getLogger("discord.ext.voice_recv")
+    logger.setLevel(logging.DEBUG)
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter("%(asctime)s [voice_recv debug] %(levelname)s %(name)s: %(message)s", datefmt="%H:%M:%S"))
+    logger.addHandler(handler)
+
+
 def _garantir_instancia_unica():
     global _socket_instancia_unica
     _socket_instancia_unica = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -124,6 +145,7 @@ def _mostrar_versao_boot():
 
 def main():
     _ativar_log_em_disco()
+    _ativar_log_debug_voice_recv()
     _garantir_instancia_unica()
     _mostrar_versao_boot()
 
