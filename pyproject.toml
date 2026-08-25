@@ -1,0 +1,23 @@
+[project]
+name = "eris"
+version = "0.1.0"
+description = "Bot de Discord da G.A.I.A. - conexão, segurança, mensagens, moderação, exportação e voz como transporte; processo próprio, sem interface gráfica, consumido pela GAIA via HTTP (webhook reverso pra conteúdo)."
+requires-python = ">=3.11"
+dependencies = [
+    "discord.py>=2.7",
+    "requests>=2.31",
+    "python-dotenv",
+]
+# 🔥 discord-ext-voice-recv/PyNaCl (recepção de áudio de voz) ficam de fora até o
+# Intérprete/Tutora por voz serem migrados pra cá (ver TODO.md) - v1 não captura
+# áudio nenhum, então não paga o custo de import (~0.3-0.4s) à toa.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["eris*"]
+
+[project.scripts]
+eris = "eris.main:main"

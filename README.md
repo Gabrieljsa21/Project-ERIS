@@ -1,0 +1,82 @@
+# Project-ERIS
+
+Bot de Discord da G.A.I.A. - conexão, segurança, mensagens, moderação,
+exportação e voz (como transporte). Processo próprio, **sem interface
+gráfica** - só uma ponte HTTP; quem decide O QUE a persona responde é
+sempre a [GAIA](../Project%20G.A.I.A) (assistente pessoal do mesmo autor),
+consultada por um webhook reverso. O ERIS nunca gera conteúdo - só executa
+a operação dentro do Discord.
+
+Extraído da GAIA em 2026-08-24 (`features/discord_presence/discord_bot.py`,
+`integrations/discord/discord_exportador.py`,
+`integrations/discord/discord_voz_nativa.py` - ver histórico completo em
+`Project G.A.I.A/assistant/docs/FUNCIONALIDADES.md`/`CHANGELOG.md`).
+Arquitetura completa e decisões de design em [`ARQUITETURA.md`](ARQUITETURA.md).
+
+## A origem do nome
+
+Éris, deusa grega da discórdia (Maçã Dourada, Julgamento de Páris) - além da
+mitologia, o trocadilho literal Eris → discórdia → Discord. Símbolo: a Maçã
+Dourada da Discórdia.
+
+## O contrato: funciona sozinho, ganha mais com a GAIA
+
+Igual ao [Project-ARGUS](../Project-ARGUS) no espírito (mesmo que o
+mecanismo de integração seja diferente - ver ARQUITETURA.md), o ERIS
+standalone já é um bot funcional de verdade: conecta, modera (kick/ban/
+timeout/canal/cargo), exporta canal pra JSON, bloqueia bot/webhook, aplica
+rate limit - tudo isso sem depender da GAIA. Quando a GAIA está de pé, ele
+ganha o que só ela pode dar: resposta de conversa (DM, menção, canal de
+servidor). Se a GAIA estiver fora do ar, quem mandar mensagem recebe um
+aviso claro em vez de silêncio.
+
+## Uso standalone
+
+```bash
+uv venv
+uv pip install -e .
+python -m eris.main
+```
+
+Precisa de `DISCORD_BOT_TOKEN` no `.env` (ver `.env.example`) - sem ele, o
+processo encerra na hora com uma mensagem clara. `DISCORD_OWNER_IDS` é só
+bootstrap da 1ª execução (a lista real, com nome + toggle por conta, é
+editada depois no Painel da GAIA ou nas rotas HTTP - persiste em
+`data/eris.db`, SQLite).
+
+Diferente do HESTIA (sem loop próprio): o ERIS tem vida própria de verdade -
+a conexão com o Discord fica de pé mesmo com a GAIA fechada, respondendo
+moderação/exportação. Só a conversa (que depende de conteúdo) fica
+indisponível nesse caso.
+
+## Integração com a GAIA
+
+`integrations/eris_client.py` (repo da GAIA) fala com a ponte HTTP daqui -
+usado pelo Agendador Diário/monitoramentos (entrega de mensagem proativa) e
+pelo Painel (CRUD de donos/config de roteamento, lista de servidores,
+exportação). Na direção contrária, o ERIS pede conteúdo pra GAIA via
+`eris/integrations/gaia_webhook.py` (`POST /eris/mensagem` no bridge da
+GAIA, porta 8766) toda vez que uma mensagem passa pelo filtro local de
+roteamento - ver `eris/core/seguranca.py` pro contrato completo e
+`eris/api_bridge.py` pro HTTP completo.
+
+## Pendência conhecida (2026-08-24)
+
+Modo Intérprete e Modo Tutora por voz numa call do Discord **não foram
+migrados nesta extração** - `discord_bot.py` (GAIA) tinha essa lógica
+inteira misturada com conexão/mensagens, e migrar áudio ao vivo sem poder
+testar contra um servidor real era um risco maior que vale a pena assumir
+de uma vez. Os slash commands `/interprete` e `/tutora` existem, mas
+respondem com um aviso em vez de tentar simular a ponte de áudio. Ver
+`TODO.md` pro desenho já fechado (turno de áudio via HTTP, GAIA continua
+dona de STT/LLM/TTS) que falta só implementar.
+
+## Estado da extração (2026-08-24)
+
+Conexão, segurança (donos, rate limit, filtro de roteamento), mensagens
+(DM/canal/categoria/anexos/mensagem de voz nativa), exportação e moderação
+(membro/mensagem/canal/cargo, tudo novo, nunca existiu na GAIA) completos e
+com sintaxe/import verificados. **Ainda não validado contra um servidor
+Discord real** - antes de confiar no dia a dia, testar: conectar com um
+token real, uma conversa por DM de ponta a ponta, um comando de moderação,
+uma exportação de canal.

@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+
+# Segredos (nunca commitar - token do bot)
+.env
+.env.*
+!.env.example
+
+# Dados reais em runtime (donos, config de servidor, exportações, áudio temporário)
+data/*.db
+data/*.json
+data/exportacoes_discord/
+data/tmp_audio/
+
+# Editores / SO
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
