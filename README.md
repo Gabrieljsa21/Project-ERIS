@@ -78,10 +78,16 @@ voz só entra na call, não inicia a sessão.
 
 Conexão, segurança (donos, rate limit, filtro de roteamento), mensagens
 (DM/canal/categoria/anexos/mensagem de voz nativa), exportação, moderação
-(membro/mensagem/canal/cargo, tudo novo, nunca existiu na GAIA) e Modo
-Conversa/Intérprete/Tutora por voz completos e com sintaxe/import
-verificados. **Ainda não validado contra um servidor Discord real** - antes
-de confiar no dia a dia, testar: conectar com um token real, uma conversa
-por DM de ponta a ponta, um comando de moderação, uma exportação de canal,
-e `/conversar entrar`/`/interprete entrar`/`/tutora entrar` numa call de voz
-real.
+(membro/mensagem/canal/cargo, tudo novo, nunca existiu na GAIA) completos
+e com sintaxe/import verificados. **Ainda não validado contra um servidor
+Discord real** - antes de confiar no dia a dia, testar: conectar com um
+token real, uma conversa por DM de ponta a ponta, um comando de
+moderação, uma exportação de canal.
+
+**Voz na call (Conversa/Intérprete/Tutora) validada em 2026-08-25 e
+BLOQUEADA** - a Gala entra na call e fala normalmente, mas não escuta
+nada: o Discord tornou obrigatória a criptografia ponta a ponta (DAVE) pra
+toda call de voz desde março de 2026, e a lib que usamos pra RECEBER
+áudio (`discord-ext-voice-recv`) ainda não sabe decodificar isso (issue
+aberta no repo dela, sem previsão). Não é bug nosso - ver TODO.md pro
+detalhe completo com fontes.

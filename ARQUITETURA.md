@@ -120,6 +120,13 @@ mais uma entrega de notificação de texto, sem peça nova pro ERIS.
 - **Slash commands de ação via webhook** (`/abrir`, `/jornalista`, etc.) -
   desenho fechado, implementação fora do escopo (ponto 3 acima).
 - Nenhuma validação contra um servidor/bot Discord real ainda foi feita -
-  ver README.md, "Estado da extração" (agora vale também pro Intérprete/
-  Tutora por voz: sintaxe/imports verificados, mas nenhuma call de voz de
-  verdade foi testada).
+  ver README.md, "Estado da extração".
+- **Voz na call não escuta nada - bloqueado por DAVE (E2EE), não é bug
+  nosso** (validado com call real em 2026-08-25, ver TODO.md pro detalhe
+  completo com fontes) - `discord-ext-voice-recv` (a lib de terceiro que
+  usamos pra RECEBER áudio) ainda não decripta o protocolo de
+  criptografia ponta a ponta que o Discord tornou obrigatório pra toda
+  call desde março de 2026 (issue aberta no repo da lib, sem resolução
+  ainda). A Gala consegue ENTRAR e FALAR na call normalmente (o envio usa
+  o cliente principal do `discord.py`, que já suporta DAVE via o pacote
+  `davey`) - só não consegue OUVIR ninguém.
