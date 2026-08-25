@@ -100,6 +100,20 @@ class SessaoVoz:
         # falhando em silêncio (ex.: `discord.opus.OpusNotEncodable`, encode
         # com sessão DAVE) ou se o áudio tocava e só não estava sendo ouvido.
         print(f" [ERIS] Tocando resposta na call: {caminho_audio}")
+        # 🔥 Diagnóstico (2026-08-25, 2ª rodada) - achado real: `.play()` sempre
+        # reporta sucesso (ver acima), mas o usuário não ouve nada mesmo assim.
+        # `discord.py` só criptografa o pacote de ENVIO com DAVE
+        # (`VoiceClient._get_voice_packet`, `dave_session.encrypt_opus`) se
+        # `_connection.can_encrypt` for True (== sessão DAVE "ready") - senão
+        # manda o pacote SEM a camada DAVE, e um cliente humano com DAVE ativo
+        # (obrigatório desde março/2026) provavelmente descarta isso em
+        # silêncio, sem gerar erro nenhum do nosso lado. Log direto do estado
+        # real da sessão ANTES de tocar, pra confirmar/descartar essa hipótese.
+        try:
+            conexao = self._vc._connection
+            print(f" [ERIS] Estado DAVE no envio: dave_session={'presente' if conexao.dave_session else 'None'}, can_encrypt={conexao.can_encrypt}, dave_session.ready={getattr(conexao.dave_session, 'ready', 'N/A')}")
+        except Exception as e:
+            print(f" [ERIS] Não consegui inspecionar o estado DAVE: {e}")
         concluido = asyncio.Event()
 
         def _ao_terminar(erro):
