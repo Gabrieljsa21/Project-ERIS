@@ -6,6 +6,18 @@ marcado como ✅ neste arquivo.
 
 ## Pendências conhecidas (da extração de 2026-08-24)
 
+### Mascarar segredos no log (`scrubber_segredos.py` da GAIA nunca foi portado)
+
+**Prioridade:** Baixa | **Complexidade:** Baixa
+
+A GAIA mascara qualquer valor de segredo configurado (token/chave) antes de
+imprimir no log/Discord (`scripts/scrubber_segredos.py`, movido pra
+`assistant/scripts/` em 2026-08-24). O ERIS não tem equivalente - os
+`print()` de erro (`eris/bot.py`, `eris/api_bridge.py`) poderiam, em teoria,
+vazar `DISCORD_BOT_TOKEN` se ele aparecer dentro de uma mensagem de erro da
+própria API do Discord. Risco baixo (não observado ainda), mas o padrão já
+existe pronto pra copiar do lado da GAIA.
+
 ### Validar contra um servidor/bot Discord real
 
 **Prioridade:** Alta | **Complexidade:** Baixa
