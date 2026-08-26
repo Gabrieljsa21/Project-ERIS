@@ -341,7 +341,7 @@ def _registrar_slash_musica(tree):
             await interaction.response.send_message("Você precisa estar numa call de voz do servidor.", ephemeral=True)
             return
         await interaction.response.defer()
-        ok, mensagem = await musica.tocar(canal, busca)
+        ok, mensagem = await musica.tocar(canal, interaction.channel, busca)
         await interaction.followup.send(mensagem, ephemeral=not ok)
 
     @grupo_musica.command(name="pular", description="Pula pra próxima música da fila")
@@ -419,7 +419,7 @@ def _registrar_slash_caos(tree):
             await interaction.response.send_message("Você precisa estar numa call de voz do servidor.", ephemeral=True)
             return
         await interaction.response.defer()
-        ok, mensagem = await musica.iniciar_caos(canal)
+        ok, mensagem = await musica.iniciar_caos(canal, interaction.channel)
         await interaction.followup.send(mensagem, ephemeral=not ok)
 
     tree.add_command(_caos)

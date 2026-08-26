@@ -151,6 +151,27 @@ mesmo `SessaoMusica.adicionar` de sempre a partir daí - nenhum mecanismo
 novo de reprodução/continuação, só a primeira busca vem do ECHO em vez do
 usuário.
 
+**Botões 👍/👎/⏭️ na mensagem de "tocando agora" (2026-08-26)** - pedido do
+usuário: "quando ela toca uma musica, podia aparecer botoes de like,
+dislike e next". `_tocar()` (`eris/core/musica.py`) virou o ÚNICO lugar
+que anuncia a faixa no canal de TEXTO (`SessaoMusica.text_channel`,
+guardado na entrada da sessão) - cobre tanto o play imediato quanto a
+continuação automática (`_avancar`, sem interaction nenhuma pra responder)
+de forma uniforme, em vez de só o retorno da slash command original.
+`_ViewControlesMusica` (discord.ui.View, `timeout=None`) processa cada
+clique:
+- 👍/👎 chamam `gaia_webhook.pedir_feedback_musica` -> `POST /eris/
+  musica_feedback` no bridge da GAIA -> `echo_client.enviar_feedback_
+  musica` -> `POST /radar/feedback_ao_vivo` no ECHO (cria a entrada no
+  histórico na hora se a faixa nunca passou pelo Radar, resolve o gênero
+  sozinho). Resposta ephemeral, não interrompe a reprodução.
+- ⏭️ chama a mesma função `pular()` de sempre (`/musica pular`).
+
+Views não são persistidas entre reinícios do processo (mesma limitação já
+aceita pro resto do estado da sessão, `_sessoes_musica` em memória) -
+botões de uma call anterior ao restart simplesmente param de responder,
+consistente com a sessão em si já não existir mais.
+
 ## Múltiplas instâncias (2026-08-26) - Música e voz simultâneas no mesmo canal
 
 Pergunta real do usuário ao ver o Modo Música pronto: dá pra ter um ERIS

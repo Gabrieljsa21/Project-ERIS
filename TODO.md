@@ -159,20 +159,26 @@ implementar o lado da GAIA que expõe essa lista + o endpoint novo no
 webhook reverso (`/eris/comando`, simétrico ao `/eris/mensagem` já
 existente).
 
-### `/caos` - validar numa call real
+### `/caos` - validado numa call real (RESOLVIDO em 2026-08-26)
 
-**Prioridade:** Alta | **Complexidade:** Baixa
+Implementado e confirmado funcionando de ponta a ponta: log de produção
+mostra "Sessão de música conectada" seguido de faixas tocando em
+sequência automática (`Let Down (Remastered) - Radiohead` -> `No
+Surprises - Radiohead`), sem intervenção manual entre uma e outra -
+confirma tanto a semente inicial (`/radar/semente`) quanto a continuação
+automática (`/radar/proxima`) funcionando juntas numa call real.
 
-Implementado em 2026-08-26 (pedido do usuário: "ERIS entra no canal de voz
-do usuário e inicia uma sessão musical contínua... sem exigir artista,
-gênero, música ou qualquer outra referência inicial"). Cadeia inteira
-testada ao vivo: `POST /radar/semente` no ECHO (contra o Last.fm real, com
-e sem exclusão), `echo_client.sugerir_semente_musical` na GAIA (mesma
-chamada), sincronização do comando no Discord (`ERIS#0983` confirmou "2
-slash command(s) sincronizado(s)") - **mas o playback de verdade numa call
-(`/caos` → busca no YouTube → `FFmpegPCMAudio` → toca) nunca foi testado
-contra um servidor Discord real**, mesma limitação já registrada pro Modo
-Música original antes de ser validado (ver histórico acima).
+### Botões 👍/👎/⏭️ na mensagem de "tocando agora" - validar clique numa call real
+
+**Prioridade:** Média | **Complexidade:** Baixa
+
+Implementado em 2026-08-26 (pedido do usuário: "quando ela toca uma
+musica, podia aparecer botoes de like, dislike e next"). Cadeia de dados
+testada ao vivo (rota do ECHO com dados reais, bot reconectado sem erro
+com `discord.ui.View`/botões carregados) - **falta clicar de verdade numa
+call real** pra confirmar que a resposta ephemeral aparece certo e que o
+botão de pular funciona a partir da mensagem (não só via `/musica
+pular`).
 
 ## Roadmap futuro (registrado, sem decisão de design específica ainda)
 
