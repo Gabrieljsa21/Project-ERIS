@@ -159,6 +159,21 @@ implementar o lado da GAIA que expõe essa lista + o endpoint novo no
 webhook reverso (`/eris/comando`, simétrico ao `/eris/mensagem` já
 existente).
 
+### `/caos` - validar numa call real
+
+**Prioridade:** Alta | **Complexidade:** Baixa
+
+Implementado em 2026-08-26 (pedido do usuário: "ERIS entra no canal de voz
+do usuário e inicia uma sessão musical contínua... sem exigir artista,
+gênero, música ou qualquer outra referência inicial"). Cadeia inteira
+testada ao vivo: `POST /radar/semente` no ECHO (contra o Last.fm real, com
+e sem exclusão), `echo_client.sugerir_semente_musical` na GAIA (mesma
+chamada), sincronização do comando no Discord (`ERIS#0983` confirmou "2
+slash command(s) sincronizado(s)") - **mas o playback de verdade numa call
+(`/caos` → busca no YouTube → `FFmpegPCMAudio` → toca) nunca foi testado
+contra um servidor Discord real**, mesma limitação já registrada pro Modo
+Música original antes de ser validado (ver histórico acima).
+
 ## Roadmap futuro (registrado, sem decisão de design específica ainda)
 
 Levantado pelo usuário ao planejar o ERIS (2026-08-24), citando AmariBot

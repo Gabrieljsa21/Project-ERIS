@@ -403,6 +403,28 @@ def _registrar_slash_musica(tree):
     tree.add_command(grupo_musica)
 
 
+def _registrar_slash_caos(tree):
+    """`/caos` (2026-08-26, pedido do usuário: "ERIS entra no canal de voz do
+    usuário e inicia uma sessão musical contínua... sem exigir artista,
+    gênero, música ou qualquer outra referência inicial") - standalone (não
+    dentro do grupo `/musica`, pedido explícito), mesmo espírito aberto a
+    qualquer membro do servidor do Modo Música."""
+    @app_commands.command(name="caos", description="A Gala entra na call e começa a tocar sozinha, sem pedir referência nenhuma")
+    async def _caos(interaction: discord.Interaction):
+        if interaction.guild is None:
+            await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
+            return
+        canal = _voice_channel_do_autor(interaction)
+        if canal is None:
+            await interaction.response.send_message("Você precisa estar numa call de voz do servidor.", ephemeral=True)
+            return
+        await interaction.response.defer()
+        ok, mensagem = await musica.iniciar_caos(canal)
+        await interaction.followup.send(mensagem, ephemeral=not ok)
+
+    tree.add_command(_caos)
+
+
 async def iniciar_bot(token, papel="completo"):
     """Sobe o bot e fica ouvindo DMs e canais de servidor até o processo
     encerrar. Não bloqueia quem chamou além do próprio `await` - use
@@ -445,6 +467,7 @@ async def iniciar_bot(token, papel="completo"):
         _registrar_slash_exportar(tree, token)
         _registrar_slash_voz(tree)
     _registrar_slash_musica(tree)
+    _registrar_slash_caos(tree)
 
     @client.event
     async def on_ready():

@@ -105,6 +105,10 @@ class SessaoMusica:
     def canal_atual(self):
         return self._vc.channel if self._vc else None
 
+    @property
+    def historico_sessao(self):
+        return list(self._historico_sessao)
+
     async def entrar(self, voice_channel):
         self._vc = await voice_channel.connect()
         print(f" [ERIS] Sessão de música conectada em \"{voice_channel.name}\".")
@@ -237,6 +241,26 @@ async def tocar(voice_channel, query):
     if sessao is None:
         return False, erro
     return await sessao.adicionar(query)
+
+
+async def iniciar_caos(voice_channel):
+    """`/caos` (2026-08-26, pedido do usuário: "ERIS entra no canal de voz do
+    usuário e inicia uma sessão musical contínua... sem exigir artista,
+    gênero, música ou qualquer outra referência inicial") - pede pro ECHO
+    (via GAIA) uma sugestão de PARTIDA baseada só no perfil/histórico
+    musical (`gaia_webhook.pedir_semente_musica`, sem faixa atual pra
+    semear - diferente de `_avancar`) e entra igual um `/musica tocar`
+    normal a partir daí. `modo_continuo` já nasce ligado (`SessaoMusica.
+    __init__`), então o motor de continuação de sempre assume sozinho -
+    nenhum mecanismo novo além de arranjar a PRIMEIRA busca sem pedir nada
+    ao usuário."""
+    sessao, erro = await _obter_ou_criar_sessao(voice_channel)
+    if sessao is None:
+        return False, erro
+    sugestao = await asyncio.to_thread(gaia_webhook.pedir_semente_musica, sessao.historico_sessao)
+    if not sugestao:
+        return False, "Não consegui pensar em nada pra começar agora (ECHO indisponível ou sem candidato) - tenta \"/musica tocar\" com algo específico."
+    return await sessao.adicionar(f"{sugestao['artista']} {sugestao['titulo']}")
 
 
 async def sair_musica(guild_id):

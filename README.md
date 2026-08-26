@@ -86,6 +86,12 @@ social, mesmo espírito de uso do Jockie). Quando a fila esvazia com
 (via webhook reverso pra GAIA) uma sugestão de próxima música "na mesma
 vibe" da que acabou de tocar - nunca repete o que já tocou NESTA sessão.
 
+**`/caos` (2026-08-26)** - mesma call, sem pedir NADA antes: entra sozinha
+e já toca algo baseado só no seu perfil/histórico musical (pede pro ECHO
+uma sugestão de partida sem faixa/artista/gênero de semente), depois
+continua na mesma vibe automaticamente igual o DJ automático de sempre.
+Funciona mesmo com perfil totalmente vazio (cai pro que está em alta).
+
 Mutuamente exclusivo com Conversa/Intérprete/Tutora DENTRO de uma mesma
 instância (Discord só permite 1 conexão de voz por conta de bot por
 servidor - ver `eris/core/musica.py`). Pra tocar música e conversar/traduzir
@@ -98,8 +104,8 @@ python -m eris.main musica
 Precisa de `DISCORD_BOT_TOKEN` (bot Discord PRÓPRIO, aplicação separada) em
 `.env.musica` (ver `.env.musica.example`) - sem o argumento `musica`, sobe
 o papel "completo" de sempre, lendo `.env`. A instância "musica" só
-registra `/musica` (sem moderação/texto livre/`eris.db`) - ver "Múltiplas
-instâncias" em `ARQUITETURA.md`.
+registra `/musica`/`/caos` (sem moderação/texto livre/`eris.db`) - ver
+"Múltiplas instâncias" em `ARQUITETURA.md`.
 
 ## Estado da extração (2026-08-24/25)
 

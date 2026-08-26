@@ -65,6 +65,16 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
   enquanto a instância "completo" respondia por voz ao mesmo tempo. A GAIA
   sobe as duas sozinha no boot (`garantir_eris_musica_rodando`). Ver
   "Múltiplas instâncias" em `ARQUITETURA.md`.
+- **`/caos` - sessão musical sem pedir referência nenhuma** (2026-08-26,
+  pedido do usuário: "ERIS entra no canal de voz do usuário e inicia uma
+  sessão musical contínua... sem exigir artista, gênero, música ou
+  qualquer outra referência inicial") - entra na call e já começa a tocar
+  sozinha, escolhendo a partir do perfil/histórico musical (via nova rota
+  do [Project ECHO](../../Project-ECHO), `POST /radar/semente`), depois
+  continua na mesma vibe automaticamente (mesmo motor do DJ automático de
+  sempre). Funciona mesmo com perfil vazio (cai pro que está em alta).
+  Validado ao vivo: comando sincronizado, rota testada contra o Last.fm
+  real com o perfil do usuário.
 
 ### Correções
 - **Intérprete/Tutora entravam na call mas não ouviam nem falavam nada** - achado pelo usuário na prática ("Quando eu peço ela p entrar na call, ela entra mas n conversa comigo"). Causa raiz: discord.py embute o DLL do libopus no pacote, mas NÃO carrega ele automaticamente no import (só versões bem antigas da lib faziam isso) - sem `discord.opus.load_opus`/`_load_default()`, a conexão de voz em si funciona (não depende de opus), mas a decodificação do áudio recebido (`discord-ext-voice-recv`) e o encode do áudio de resposta falham em silêncio, sem nenhum erro visível no Discord. Corrigido chamando `discord.opus._load_default()` no início de `iniciar_bot` (`eris/bot.py`), com aviso no log se falhar.
