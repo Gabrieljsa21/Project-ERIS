@@ -340,9 +340,15 @@ def _registrar_slash_musica(tree):
         if canal is None:
             await interaction.response.send_message("Você precisa estar numa call de voz do servidor.", ephemeral=True)
             return
-        await interaction.response.defer()
+        # 🔥 Confirmação SEMPRE ephemeral (2026-08-26, achado pelo usuário:
+        # "mandou 2 mensagens... a primeira desnecessaria") - o anúncio
+        # público de verdade ("tocando agora" + botões) já sai à parte via
+        # `_tocar` -> `text_channel.send`; essa aqui é só o "recebi seu
+        # pedido" pra quem chamou o comando, não precisa aparecer pra todo
+        # mundo no canal.
+        await interaction.response.defer(ephemeral=True)
         ok, mensagem = await musica.tocar(canal, interaction.channel, busca)
-        await interaction.followup.send(mensagem, ephemeral=not ok)
+        await interaction.followup.send(mensagem, ephemeral=True)
 
     @grupo_musica.command(name="pular", description="Pula pra próxima música da fila")
     async def _musica_pular(interaction: discord.Interaction):
@@ -418,9 +424,10 @@ def _registrar_slash_caos(tree):
         if canal is None:
             await interaction.response.send_message("Você precisa estar numa call de voz do servidor.", ephemeral=True)
             return
-        await interaction.response.defer()
+        # 🔥 Confirmação SEMPRE ephemeral - mesmo motivo de `_musica_tocar`.
+        await interaction.response.defer(ephemeral=True)
         ok, mensagem = await musica.iniciar_caos(canal, interaction.channel)
-        await interaction.followup.send(mensagem, ephemeral=not ok)
+        await interaction.followup.send(mensagem, ephemeral=True)
 
     tree.add_command(_caos)
 
