@@ -136,8 +136,51 @@ call. Fronteira aplicada, sem sobreposição:
 - **Mutuamente exclusivo com Conversa/Intérprete/Tutora** (não simultâneo)
   DENTRO de uma mesma instância do ERIS - Discord só permite 1 conexão de
   voz por conta de bot por servidor. Rodar Música e voz ao mesmo tempo no
-  mesmo canal exige uma 2ª instância/token de bot - ver "Próximo passo
-  confirmado" em `TODO.md`.
+  mesmo canal exige uma 2ª instância/token de bot - ver seção abaixo.
+
+## Múltiplas instâncias (2026-08-26) - Música e voz simultâneas no mesmo canal
+
+Pergunta real do usuário ao ver o Modo Música pronto: dá pra ter um ERIS
+tocando música e outro conversando/traduzindo AO MESMO TEMPO no MESMO
+canal (mesmo espírito do Jockie, que usa 4 bots separados - Jockie Music/
+Music 1/2/3)? Sim - o limite do Discord é 1 conexão de voz por CONTA de
+bot por servidor, não por canal; duas contas diferentes podem estar no
+mesmo canal ao mesmo tempo. O usuário criou uma 2ª aplicação/bot no
+Developer Portal (`ERIS#0983`, token próprio) - o código ficou modular o
+bastante (Música e voz já eram mutuamente exclusivas DENTRO de uma
+instância) pra isso ser só um parâmetro de papel, não reescrita.
+
+- **`eris/main.py`** detecta o papel por argv (`python -m eris.main` =
+  "completo", `python -m eris.main musica` = "musica") - não por variável
+  de ambiente, pra não colidir com o `override=True` do `load_dotenv` (uma
+  variável setada no processo pai venceria o `.env` local em silêncio,
+  mesmo bug já corrigido no HESTIA/MOIRAI/GAIA). Papel "musica" carrega
+  `.env.musica` (token PRÓPRIO, template em `.env.musica.example`) em vez
+  de `.env`, usa uma porta de instância única separada
+  (`PORTA_INSTANCIA_UNICA_MUSICA = 8779`, `eris/config.py`) e PULA
+  `db.inicializar()`/a ponte HTTP (`api_bridge.py`, porta 8772 já ocupada
+  pela instância "completo") - sem moderação/donos, a GAIA nunca precisa
+  chamar DENTRO dessa instância, só ela chamando a GAIA
+  (`gaia_webhook.pedir_proxima_musica`).
+- **`eris/bot.py::iniciar_bot(token, papel="completo")`** condiciona no
+  papel: intents privilegiadas (`message_content`/`members`) e os grupos
+  `/moderacao`, `/mensagem`, `/canal`, `/cargo`, `/exportar`,
+  `/conversar`, `/interprete`, `/tutora`, além do handler `on_message`
+  (texto livre/webhook pra GAIA) e `on_guild_join`/`on_guild_remove`
+  (cache de guilds, usa `db`) só existem no papel "completo". `/musica` e
+  `on_voice_state_update` (sair sozinho de call vazia) valem pros dois -
+  este último já era agnóstico de papel, checa `voz_call.canal_ativo` OU
+  `musica.canal_ativo`.
+- **Testado com o token real do usuário (2026-08-26)**: `python -m
+  eris.main musica` conecta como `ERIS#0983`, sincroniza só 1 grupo de
+  slash command (`/musica`), sem tocar no `eris.db` nem abrir a porta
+  8772 - validado lendo `logs/2026-08-26.log` (processo derrubado logo
+  depois, teste isolado, sem entrar numa call de verdade ainda).
+- **Decisão de `data/eris.db`**: NÃO compartilhado - a instância "musica"
+  nem chama `db.inicializar()`, então não tem tabela nenhuma. Donos/config
+  de roteamento continuam só na instância "completo" (ela decide quem é
+  dono pra fins de moderação/DM; `/musica` é aberto a qualquer membro em
+  ambas, sem checar `db`).
 
 ## Pendências
 

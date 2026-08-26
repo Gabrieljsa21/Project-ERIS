@@ -403,13 +403,20 @@ def _registrar_slash_musica(tree):
     tree.add_command(grupo_musica)
 
 
-async def iniciar_bot(token):
+async def iniciar_bot(token, papel="completo"):
     """Sobe o bot e fica ouvindo DMs e canais de servidor até o processo
     encerrar. Não bloqueia quem chamou além do próprio `await` - use
     `asyncio.create_task` pra rodar em paralelo com o servidor HTTP
-    (`eris/api_bridge.py`)."""
+    (`eris/api_bridge.py`).
+
+    `papel="musica"` (2026-08-26, 2ª instância dedicada ao Modo Música, ver
+    `eris/main.py`) registra só o grupo `/musica` - sem moderação, exportar,
+    voz (Conversa/Intérprete/Tutora) nem o pipeline de texto livre (`on_
+    message`/webhook pra GAIA) - essa instância só toca música, não tem
+    conta de "dono"/DM pra proteger."""
     global _client_atual, _loop_atual, _slash_ja_sincronizado
     _loop_atual = asyncio.get_running_loop()
+    completo = papel == "completo"
 
     # 🔥 2026-08-25 - achado real (ela entrava na call mas não ouvia nem falava
     # nada): discord.py EMBUTE o DLL do libopus (`discord/bin/libopus-0.x64.dll`),
@@ -426,15 +433,17 @@ async def iniciar_bot(token):
             print(" [SISTEMA] ATENÇÃO: não consegui carregar o libopus - Intérprete/Tutora por voz não vão funcionar (entra na call, mas não ouve nem fala nada).")
 
     intents = discord.Intents.default()
-    intents.message_content = True
-    intents.members = True  # 🔥 exigido pra moderação de membro (kick/ban/timeout/cargo) funcionar de forma confiável
-    intents.voice_states = True  # 🔥 Intérprete/Tutora por voz - detectar canal esvaziando (on_voice_state_update)
+    if completo:
+        intents.message_content = True  # 🔥 texto livre/webhook pra GAIA - papel "musica" não conversa, não precisa
+        intents.members = True  # 🔥 exigido pra moderação de membro (kick/ban/timeout/cargo) funcionar de forma confiável
+    intents.voice_states = True  # 🔥 Intérprete/Tutora/Música - detectar canal esvaziando (on_voice_state_update), vale pros dois papéis
 
     client = discord.Client(intents=intents)
     tree = app_commands.CommandTree(client)
-    _registrar_slash_moderacao(tree)
-    _registrar_slash_exportar(tree, token)
-    _registrar_slash_voz(tree)
+    if completo:
+        _registrar_slash_moderacao(tree)
+        _registrar_slash_exportar(tree, token)
+        _registrar_slash_voz(tree)
     _registrar_slash_musica(tree)
 
     @client.event
@@ -442,8 +451,9 @@ async def iniciar_bot(token):
         global _client_atual, _slash_ja_sincronizado
         _client_atual = client
         mensagens.definir_client(client)
-        print(f" [ERIS] Bot conectado como {client.user}.")
-        db.salvar_guilds_cache(_guilds_para_cache(client))
+        print(f" [ERIS] Bot conectado como {client.user} (papel \"{papel}\").")
+        if completo:
+            db.salvar_guilds_cache(_guilds_para_cache(client))  # 🔥 papel "musica" não usa `db` (sem moderação/donos, ver eris/main.py)
         if not _slash_ja_sincronizado:
             try:
                 sincronizados = await tree.sync()
@@ -452,13 +462,14 @@ async def iniciar_bot(token):
             except Exception as e:
                 print(f" [ERIS] Erro ao sincronizar slash commands: {e}")
 
-    @client.event
-    async def on_guild_join(guild):
-        db.salvar_guilds_cache(_guilds_para_cache(client))
+    if completo:
+        @client.event
+        async def on_guild_join(guild):
+            db.salvar_guilds_cache(_guilds_para_cache(client))
 
-    @client.event
-    async def on_guild_remove(guild):
-        db.salvar_guilds_cache(_guilds_para_cache(client))
+        @client.event
+        async def on_guild_remove(guild):
+            db.salvar_guilds_cache(_guilds_para_cache(client))
 
     @client.event
     async def on_voice_state_update(member, before, after):
@@ -473,87 +484,90 @@ async def iniciar_bot(token):
             if not any(not m.bot for m in canal_ativo.members):
                 await voz_call.sair_qualquer(member.guild.id)
 
-    async def _responder(message, eh_dono, remetente_id, texto):
-        try:
-            async with message.channel.typing():
-                resposta = await asyncio.to_thread(
-                    gaia_webhook.pedir_resposta_persona, texto, eh_dono, remetente_id, message.author.display_name, message.channel.id,
-                )
-            if resposta is None:
-                resposta = "A Galateia está desligada agora - não consigo conversar, só executar comando de moderação/exportação."
-            for bloco in mensagens.fatiar_mensagem(resposta):
-                await message.channel.send(bloco)
-        except Exception as e:
-            print(f" [ERIS] Erro processando mensagem: {e}")
+    # 🔥 Papel "musica" não registra `on_message`/o pipeline de texto livre -
+    # bot dedicado só ao grupo `/musica`, sem webhook pra GAIA, sem DM/menção.
+    if completo:
+        async def _responder(message, eh_dono, remetente_id, texto):
             try:
-                await message.channel.send("Deu um erro aqui do meu lado, tenta de novo.")
-            except Exception:
-                pass
-
-    @client.event
-    async def on_message(message):
-        if message.author == client.user:
-            return
-        eh_bot_ou_webhook = message.author.bot
-        remetente_id = str(message.author.id)
-        eh_dono_flag = seguranca.eh_dono(remetente_id)
-
-        if not eh_dono_flag and not eh_bot_ou_webhook and seguranca.limite_excedido(remetente_id):
-            if seguranca.deveria_avisar_limite(remetente_id):
+                async with message.channel.typing():
+                    resposta = await asyncio.to_thread(
+                        gaia_webhook.pedir_resposta_persona, texto, eh_dono, remetente_id, message.author.display_name, message.channel.id,
+                    )
+                if resposta is None:
+                    resposta = "A Galateia está desligada agora - não consigo conversar, só executar comando de moderação/exportação."
+                for bloco in mensagens.fatiar_mensagem(resposta):
+                    await message.channel.send(bloco)
+            except Exception as e:
+                print(f" [ERIS] Erro processando mensagem: {e}")
                 try:
-                    await message.channel.send("Calma aí, muitas mensagens rápido demais - espera um minuto e manda de novo.")
+                    await message.channel.send("Deu um erro aqui do meu lado, tenta de novo.")
                 except Exception:
                     pass
-            return
 
-        em_dm = isinstance(message.channel, discord.DMChannel)
-        if not em_dm and message.guild is None:
-            return  # nem DM nem servidor (ex.: group DM) - fora de escopo
+        @client.event
+        async def on_message(message):
+            if message.author == client.user:
+                return
+            eh_bot_ou_webhook = message.author.bot
+            remetente_id = str(message.author.id)
+            eh_dono_flag = seguranca.eh_dono(remetente_id)
 
-        mencionada = client.user in message.mentions if not em_dm else False
+            if not eh_dono_flag and not eh_bot_ou_webhook and seguranca.limite_excedido(remetente_id):
+                if seguranca.deveria_avisar_limite(remetente_id):
+                    try:
+                        await message.channel.send("Calma aí, muitas mensagens rápido demais - espera um minuto e manda de novo.")
+                    except Exception:
+                        pass
+                return
 
-        # 🔥 Gatilho por menção do Modo Intérprete (portado de discord_bot.py) -
-        # só o dono aciona, e roda ANTES do filtro normal de roteamento: precisa
-        # funcionar mesmo com "Responder livremente"/"menções" desligado -
-        # entrar/sair da call não é conversa livre, é comando.
-        if mencionada and eh_dono_flag and not em_dm:
-            texto_sem_mencao = message.content
+            em_dm = isinstance(message.channel, discord.DMChannel)
+            if not em_dm and message.guild is None:
+                return  # nem DM nem servidor (ex.: group DM) - fora de escopo
+
+            mencionada = client.user in message.mentions if not em_dm else False
+
+            # 🔥 Gatilho por menção do Modo Intérprete (portado de discord_bot.py) -
+            # só o dono aciona, e roda ANTES do filtro normal de roteamento: precisa
+            # funcionar mesmo com "Responder livremente"/"menções" desligado -
+            # entrar/sair da call não é conversa livre, é comando.
+            if mencionada and eh_dono_flag and not em_dm:
+                texto_sem_mencao = message.content
+                if client.user is not None:
+                    texto_sem_mencao = texto_sem_mencao.replace(f"<@{client.user.id}>", "").replace(f"<@!{client.user.id}>", "").strip()
+                if _PADRAO_INTERPRETE_ENTRAR.search(texto_sem_mencao):
+                    voice_state = getattr(message.author, "voice", None)
+                    if voice_state is None or voice_state.channel is None:
+                        await message.channel.send("Você precisa estar numa call de voz do servidor pra eu entrar.")
+                    else:
+                        ok, resposta = await voz_call.entrar_interprete(voice_state.channel)
+                        await message.channel.send(resposta)
+                    return
+                if _PADRAO_CONVERSA_ENTRAR.search(texto_sem_mencao):
+                    voice_state = getattr(message.author, "voice", None)
+                    if voice_state is None or voice_state.channel is None:
+                        await message.channel.send("Você precisa estar numa call de voz do servidor pra eu entrar.")
+                    else:
+                        ok, resposta = await voz_call.entrar_conversa(voice_state.channel)
+                        await message.channel.send(resposta)
+                    return
+                if _PADRAO_SAIR.search(texto_sem_mencao):
+                    resposta = await voz_call.sair_qualquer(message.guild.id)
+                    await message.channel.send(resposta)
+                    return
+
+            if not seguranca.deve_processar_mensagem(
+                eh_bot_ou_webhook=eh_bot_ou_webhook, em_dm=em_dm,
+                guild_id=message.guild.id if message.guild else None, mencionada=mencionada,
+                nome_exibicao=message.author.display_name, nome_usuario=message.author.name,
+            ):
+                return
+
+            texto = message.content
             if client.user is not None:
-                texto_sem_mencao = texto_sem_mencao.replace(f"<@{client.user.id}>", "").replace(f"<@!{client.user.id}>", "").strip()
-            if _PADRAO_INTERPRETE_ENTRAR.search(texto_sem_mencao):
-                voice_state = getattr(message.author, "voice", None)
-                if voice_state is None or voice_state.channel is None:
-                    await message.channel.send("Você precisa estar numa call de voz do servidor pra eu entrar.")
-                else:
-                    ok, resposta = await voz_call.entrar_interprete(voice_state.channel)
-                    await message.channel.send(resposta)
-                return
-            if _PADRAO_CONVERSA_ENTRAR.search(texto_sem_mencao):
-                voice_state = getattr(message.author, "voice", None)
-                if voice_state is None or voice_state.channel is None:
-                    await message.channel.send("Você precisa estar numa call de voz do servidor pra eu entrar.")
-                else:
-                    ok, resposta = await voz_call.entrar_conversa(voice_state.channel)
-                    await message.channel.send(resposta)
-                return
-            if _PADRAO_SAIR.search(texto_sem_mencao):
-                resposta = await voz_call.sair_qualquer(message.guild.id)
-                await message.channel.send(resposta)
-                return
+                texto = texto.replace(f"<@{client.user.id}>", "").replace(f"<@!{client.user.id}>", "").strip()
+            if not texto:
+                return  # só a menção, sem nenhum conteúdo pra responder
 
-        if not seguranca.deve_processar_mensagem(
-            eh_bot_ou_webhook=eh_bot_ou_webhook, em_dm=em_dm,
-            guild_id=message.guild.id if message.guild else None, mencionada=mencionada,
-            nome_exibicao=message.author.display_name, nome_usuario=message.author.name,
-        ):
-            return
-
-        texto = message.content
-        if client.user is not None:
-            texto = texto.replace(f"<@{client.user.id}>", "").replace(f"<@!{client.user.id}>", "").strip()
-        if not texto:
-            return  # só a menção, sem nenhum conteúdo pra responder
-
-        await _responder(message, eh_dono_flag, remetente_id, texto)
+            await _responder(message, eh_dono_flag, remetente_id, texto)
 
     await client.start(token)

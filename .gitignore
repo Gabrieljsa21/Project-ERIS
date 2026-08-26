@@ -12,6 +12,7 @@ dist/
 .env
 .env.*
 !.env.example
+!.env.musica.example
 
 # Dados reais em runtime (donos, config de servidor, exportações, áudio temporário)
 data/*.db

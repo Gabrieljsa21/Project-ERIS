@@ -17,16 +17,28 @@ import threading
 
 from dotenv import load_dotenv
 
+PASTA_PROJETO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# 🔥 Papel desta instância - "completo" (padrão, bot único de sempre) ou
+# "musica" (2ª instância, bot Discord PRÓPRIO dedicado só ao Modo Música -
+# 2026-08-26, pedido do usuário: "esse novo bot devo fazer p ERIS? O primeiro
+# é da GAIA" -> sim, 2ª instância do MESMO projeto ERIS, token diferente).
+# Detectado por argv (`python -m eris.main musica`) em vez de variável de
+# ambiente - evita colidir com o `override=True` do load_dotenv abaixo (ver
+# `.env.musica.example`).
+PAPEL = "musica" if len(sys.argv) > 1 and sys.argv[1].strip().lower() == "musica" else "completo"
+_ARQUIVO_ENV = ".env.musica" if PAPEL == "musica" else ".env"
+
 # 🔥 override=True (mesmo motivo já documentado no HESTIA/MOIRAI e corrigido
 # na GAIA no mesmo dia, 2026-08-24) - sem isso, uma variável de ambiente
-# herdada do processo que lançou o ERIS venceria o `.env` local em silêncio.
-load_dotenv(override=True)
+# herdada do processo que lançou o ERIS venceria o `.env`/`.env.musica` local
+# em silêncio.
+load_dotenv(os.path.join(PASTA_PROJETO, _ARQUIVO_ENV), override=True)
 
 from eris import bot, db  # noqa: E402
 from eris.api_bridge import iniciar_servidor_api  # noqa: E402
-from eris.config import PORTA_INSTANCIA_UNICA  # noqa: E402
+from eris.config import PORTA_INSTANCIA_UNICA, PORTA_INSTANCIA_UNICA_MUSICA  # noqa: E402
 
-PASTA_PROJETO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _socket_instancia_unica = None
 
 
@@ -112,13 +124,14 @@ def _ativar_log_debug_voice_recv():
 
 def _garantir_instancia_unica():
     global _socket_instancia_unica
+    porta = PORTA_INSTANCIA_UNICA_MUSICA if PAPEL == "musica" else PORTA_INSTANCIA_UNICA
     _socket_instancia_unica = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
-        _socket_instancia_unica.bind(("127.0.0.1", PORTA_INSTANCIA_UNICA))
+        _socket_instancia_unica.bind(("127.0.0.1", porta))
     except OSError:
         print(
-            " [SISTEMA] Já existe uma instância do ERIS rodando "
-            f"(porta {PORTA_INSTANCIA_UNICA} ocupada) - encerrando esta pra não conectar o mesmo token duas vezes."
+            f" [SISTEMA] Já existe uma instância do ERIS (papel \"{PAPEL}\") rodando "
+            f"(porta {porta} ocupada) - encerrando esta pra não conectar o mesmo token duas vezes."
         )
         sys.exit(1)
 
@@ -151,17 +164,23 @@ def main():
 
     token = os.getenv("DISCORD_BOT_TOKEN")
     if not token:
-        print(" [SISTEMA] DISCORD_BOT_TOKEN não configurado no .env - o ERIS não tem como conectar. Veja .env.example.")
+        print(f" [SISTEMA] DISCORD_BOT_TOKEN não configurado no {_ARQUIVO_ENV} - o ERIS não tem como conectar. Veja .env.example/.env.musica.example.")
         sys.exit(1)
 
-    db.inicializar()
-    ids_bootstrap = [i.strip() for i in os.getenv("DISCORD_OWNER_IDS", "").split(",") if i.strip()]
-    db.importar_donos_bootstrap(ids_bootstrap)
+    if PAPEL == "completo":
+        db.inicializar()
+        ids_bootstrap = [i.strip() for i in os.getenv("DISCORD_OWNER_IDS", "").split(",") if i.strip()]
+        db.importar_donos_bootstrap(ids_bootstrap)
+        threading.Thread(target=iniciar_servidor_api, args=(token,), daemon=True).start()
+        print(" [SISTEMA] ERIS pronto - ponte HTTP na porta 8772, conectando ao Discord...")
+    else:
+        # 🔥 Papel "musica" não precisa de `db` (sem moderação/donos) nem da
+        # ponte HTTP (`api_bridge.py`, porta 8772 já em uso pela instância
+        # "completo") - a GAIA nunca chama DENTRO dessa instância, só ela
+        # chamando a GAIA (`gaia_webhook.pedir_proxima_musica`).
+        print(" [SISTEMA] ERIS (papel música) pronto - conectando ao Discord...")
 
-    threading.Thread(target=iniciar_servidor_api, args=(token,), daemon=True).start()
-    print(" [SISTEMA] ERIS pronto - ponte HTTP na porta 8772, conectando ao Discord...")
-
-    asyncio.run(bot.iniciar_bot(token))
+    asyncio.run(bot.iniciar_bot(token, papel=PAPEL))
 
 
 if __name__ == "__main__":

@@ -182,35 +182,20 @@ implementar o lado da GAIA que expõe essa lista + o endpoint novo no
 webhook reverso (`/eris/comando`, simétrico ao `/eris/mensagem` já
 existente).
 
-## Próximo passo confirmado: múltiplas instâncias do ERIS
+### Múltiplas instâncias - convidar o bot de música pro servidor e validar numa call real
 
-**Prioridade:** Alta | **Complexidade:** Média | **Status:** próximo a implementar (pedido do usuário 2026-08-25, depois de fechar o Modo Música)
+**Prioridade:** Alta | **Complexidade:** Baixa
 
-Pergunta real do usuário: dá pra ter um ERIS tocando música e outro
-conversando/traduzindo AO MESMO TEMPO no MESMO canal (mesmo espírito do
-Jockie, que usa 4 bots separados - Jockie Music/Music 1/2/3)? **Sim,
-tecnicamente** - o limite real do Discord é 1 conexão de voz por CONTA de
-bot por servidor, não por canal; duas contas de bot diferentes podem estar
-no mesmo canal ao mesmo tempo.
-
-Precisa de:
-1. Uma 2ª aplicação de bot no Discord Developer Portal (token separado,
-   convite separado pro servidor) - só o usuário pode criar isso.
-2. Rodar um 2º processo do ERIS com esse token (ex.: `DISCORD_BOT_TOKEN`
-   diferente por instância via `.env` separado ou variável de ambiente na
-   hora de subir) - o código já é modular o bastante (Música e voz já são
-   mutuamente exclusivos DENTRO de uma instância, ver `eris/core/musica.py`/
-   `voz_call.py`) pra isso não exigir reescrever nada, é mais trabalho de
-   infraestrutura/deploy (2 tokens, 2 processos, talvez 2 portas de API/
-   instância única) do que de código novo.
-3. Decidir se as 2 instâncias compartilham o mesmo `data/eris.db`
-   (donos/config de roteamento) ou têm cada uma o seu - preservar histórico/
-   moderação de uma instância "principal" enquanto a "de música" fica mais
-   leve provavelmente faz mais sentido.
-
-Achado relacionado já corrigido: `SinkVoz` agora ignora áudio de outros bots
-(ver seção "Modo Música" acima) - sem isso, a instância ouvindo pegaria a
-música da instância tocando como se fosse um humano falando.
+Implementado em 2026-08-26 (ver "Múltiplas instâncias" em `ARQUITETURA.md`):
+`python -m eris.main musica` sobe uma 2ª instância dedicada (bot `ERIS#0983`,
+token próprio em `.env.musica`), sem moderação/texto livre/db, só `/musica`.
+Testado conectando com o token real (sincronizou o slash command certo,
+sem tocar no `eris.db`) - **ainda falta**: convidar esse 2º bot pro servidor
+de verdade (link OAuth2 com escopo `bot`+`applications.commands`) e validar
+as duas instâncias JUNTAS numa call real (uma tocando música, outra no Modo
+Conversa/Intérprete, no MESMO canal, confirmando que nenhuma escuta a outra
+- a correção do `SinkVoz` (ver seção "Modo Música" acima) cobre isso em
+teoria, nunca testada com 2 bots de verdade em call).
 
 ## Roadmap futuro (registrado, sem decisão de design específica ainda)
 
