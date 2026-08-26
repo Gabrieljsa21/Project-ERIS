@@ -168,17 +168,15 @@ Surprises - Radiohead`), sem intervenção manual entre uma e outra -
 confirma tanto a semente inicial (`/radar/semente`) quanto a continuação
 automática (`/radar/proxima`) funcionando juntas numa call real.
 
-### Botões 👍/👎/⏭️ na mensagem de "tocando agora" - validar clique numa call real
-
-**Prioridade:** Média | **Complexidade:** Baixa
+### Botões 👍/👎/⏭️ na mensagem de "tocando agora" - pular confirmado, like/dislike ainda não
 
 Implementado em 2026-08-26 (pedido do usuário: "quando ela toca uma
-musica, podia aparecer botoes de like, dislike e next"). Cadeia de dados
-testada ao vivo (rota do ECHO com dados reais, bot reconectado sem erro
-com `discord.ui.View`/botões carregados) - **falta clicar de verdade numa
-call real** pra confirmar que a resposta ephemeral aparece certo e que o
-botão de pular funciona a partir da mensagem (não só via `/musica
-pular`).
+musica, podia aparecer botoes de like, dislike e next"). O botão ⏭️ já
+foi usado numa call real de verdade (o próprio usuário relatou "quando
+pulo para a proxima pelo botão" ao descrever o bug de repetição abaixo) -
+confirma que a View renderiza e o clique funciona. Faltam 👍/👎 - nunca
+clicados ainda, então a resposta ephemeral do feedback ainda não foi
+confirmada visualmente numa call real.
 
 ## Roadmap futuro (registrado, sem decisão de design específica ainda)
 

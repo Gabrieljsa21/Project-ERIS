@@ -172,6 +172,31 @@ aceita pro resto do estado da sessão, `_sessoes_musica` em memória) -
 botões de uma call anterior ao restart simplesmente param de responder,
 consistente com a sessão em si já não existir mais.
 
+## Bug real: dedup de sessão nunca batia, mesma música repetia (2026-08-26)
+
+Usuário reportou: "Caos esta demorando para iniciar e esta repetindo
+sempre a msm musica, quando pulo para a proxima pelo botão tbm" - log de
+produção confirmou "Maroon 5 - Payphone ft. Wiz Khalifa (Explicit)
+(Official Music Video)" tocando 3x SEGUIDAS. Causa raiz: `_registrar_
+historico`/o pedido de próxima sugestão usavam `faixa["artista"]`/
+`faixa["titulo"]` como o YOUTUBE devolveu (uploader do canal + título cru
+do vídeo, cheio de "(Official Video)"/"ft. Fulano"/variações de
+remaster) - a lista de exclusão de sessão mandada pro ECHO nunca batia
+com o "artista::título" LIMPO que o próprio ECHO usa nos candidatos dele
+(ex.: `"maroon 5vevo::maroon 5 - payphone ft. wiz khalifa (explicit)
+(official music video)"` no lugar de `"maroon 5::payphone"`) - a exclusão
+de sessão inteira era, na prática, um no-op silencioso.
+
+Corrigido: `_buscar_sugestao_no_youtube` (novo, `eris/core/musica.py`)
+busca no YouTube mas SOBRESCREVE o artista/título da faixa resultante
+pro valor limpo que o ECHO sugeriu, ANTES de tocar/registrar no
+histórico de sessão. Usado tanto por `_avancar` (continuação automática)
+quanto por `iniciar_caos` (`/caos`) - as duas únicas origens de faixa que
+vêm de uma sugestão do ECHO (busca livre via `/musica tocar` continua
+usando o texto cru do YouTube, não tem "valor limpo" alternativo pra
+usar). Validado simulando o cenário exato do bug (YouTube devolvendo
+título sujo, artista final confirmado como o limpo do ECHO).
+
 ## Múltiplas instâncias (2026-08-26) - Música e voz simultâneas no mesmo canal
 
 Pergunta real do usuário ao ver o Modo Música pronto: dá pra ter um ERIS
