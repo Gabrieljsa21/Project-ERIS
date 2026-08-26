@@ -466,8 +466,16 @@ async def iniciar_bot(token, papel="completo"):
         _registrar_slash_moderacao(tree)
         _registrar_slash_exportar(tree, token)
         _registrar_slash_voz(tree)
-    _registrar_slash_musica(tree)
-    _registrar_slash_caos(tree)
+    else:
+        # 🔥 Exclusivo do papel "musica" (2026-08-26, achado pelo usuário: "pq
+        # a gaia e a eris tem /caos? N deveria ser apenas da eris?") - antes
+        # registrava sem checar papel nenhum, então a instância "completo"
+        # também tinha /musica/caos: um usuário podia acidentalmente tocar
+        # música NELA (ocupando o único slot de voz que ela tem) e perder
+        # Conversa/Intérprete/Tutora até parar a música - exatamente o
+        # problema que a 2ª instância existe pra evitar.
+        _registrar_slash_musica(tree)
+        _registrar_slash_caos(tree)
 
     @client.event
     async def on_ready():

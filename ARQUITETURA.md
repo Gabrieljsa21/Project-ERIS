@@ -226,10 +226,18 @@ instância) pra isso ser só um parâmetro de papel, não reescrita.
   `/moderacao`, `/mensagem`, `/canal`, `/cargo`, `/exportar`,
   `/conversar`, `/interprete`, `/tutora`, além do handler `on_message`
   (texto livre/webhook pra GAIA) e `on_guild_join`/`on_guild_remove`
-  (cache de guilds, usa `db`) só existem no papel "completo". `/musica` e
-  `on_voice_state_update` (sair sozinho de call vazia) valem pros dois -
-  este último já era agnóstico de papel, checa `voz_call.canal_ativo` OU
-  `musica.canal_ativo`.
+  (cache de guilds, usa `db`) só existem no papel "completo". `/musica`/
+  `/caos` são o INVERSO - exclusivos do papel "musica" (achado pelo
+  usuário 2026-08-26: "pq a gaia e a eris tem /caos? N deveria ser apenas
+  da eris?" - antes registrava sem checar papel, então a instância
+  "completo" também tinha os comandos, e um clique errado nela ocupava o
+  único slot de voz dela com música, derrubando Conversa/Intérprete/Tutora
+  até parar - exatamente o que a 2ª instância existe pra evitar).
+  `on_voice_state_update` (sair sozinho de call vazia) é o único que vale
+  pros dois papéis de propósito - já era agnóstico, checa `voz_call.
+  canal_ativo` OU `musica.canal_ativo` (na instância "completo", `musica.
+  canal_ativo` nunca é diferente de None, já que ela não cria sessão de
+  música nenhuma - checagem inofensiva, não removida por simplicidade).
 - **Validado numa call real (2026-08-26)**: as 2 instâncias JUNTAS no
   MESMO canal - `ERIS#0983` tocando música (`/musica tocar`) enquanto a
   instância "completo" respondia por voz no Modo Conversa ao mesmo tempo,
