@@ -166,3 +166,16 @@ def pedir_proxima_musica(artista_atual, titulo_atual, excluir):
         return None
     proxima = resultado["proxima"]
     return {"artista": proxima.get("artista"), "titulo": proxima.get("titulo")}
+
+
+def pedir_semente_musica(excluir):
+    """`/caos` (2026-08-26, pedido do usuário: "ERIS entra no canal de voz...
+    sem exigir artista, gênero, música ou qualquer outra referência inicial")
+    - pede uma sugestão de PARTIDA baseada só no perfil/histórico musical,
+    sem faixa atual pra semear (diferente de `pedir_proxima_musica`). Mesmo
+    contrato de retorno: {"artista", "titulo"} ou None."""
+    resultado = _post("/eris/musica_caos", {"excluir": list(excluir)})
+    if not resultado or not resultado.get("semente"):
+        return None
+    semente = resultado["semente"]
+    return {"artista": semente.get("artista"), "titulo": semente.get("titulo")}

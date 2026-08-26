@@ -138,6 +138,19 @@ call. Fronteira aplicada, sem sobreposição:
   voz por conta de bot por servidor. Rodar Música e voz ao mesmo tempo no
   mesmo canal exige uma 2ª instância/token de bot - ver seção abaixo.
 
+**`/caos` (2026-08-26)** - pedido do usuário: "ERIS entra no canal de voz do
+usuário e inicia uma sessão musical contínua... sem exigir artista, gênero,
+música ou qualquer outra referência inicial". Mesma fronteira de sempre, só
+muda QUEM inicia a busca: em vez do usuário mandar uma `query` (`/musica
+tocar`), o ERIS pede pra GAIA (`gaia_webhook.pedir_semente_musica`) uma
+sugestão de PARTIDA - a GAIA repassa pro ECHO (`POST /eris/musica_caos` no
+bridge dela, `echo_client.sugerir_semente_musical` -> `POST /radar/semente`
+no ECHO) e devolve `{"artista", "titulo"}` baseado só no perfil/histórico,
+sem precisar de faixa atual. `eris/core/musica.py::iniciar_caos` delega pro
+mesmo `SessaoMusica.adicionar` de sempre a partir daí - nenhum mecanismo
+novo de reprodução/continuação, só a primeira busca vem do ECHO em vez do
+usuário.
+
 ## Múltiplas instâncias (2026-08-26) - Música e voz simultâneas no mesmo canal
 
 Pergunta real do usuário ao ver o Modo Música pronto: dá pra ter um ERIS
