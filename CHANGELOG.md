@@ -42,12 +42,25 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
   gatilho genérico "entra" que antes sempre acionava o Intérprete agora cai
   aqui). Qualquer participante da call pode falar, não só o dono. Endpoint
   novo `POST /eris/conversa/turno`.
+- **Modo Música (2026-08-25) - substitui o Jockie Music** - pedido do
+  usuário: "quero q alguem seja meu dj exclusivo... qnd eu pedir uma musica,
+  ele continue tocando outras em sequencia na mesma vibe". `/musica tocar/
+  pular/pausar/continuar/fila/parar/dj_automatico`, aberto a qualquer membro
+  do servidor. Busca/streaming via YouTube (`yt-dlp`, client "android" -
+  evita bloqueio de bot sem precisar de cookie/login). Quando a fila
+  esvazia com DJ automático ligado (padrão), pede pro Project ECHO (via
+  webhook reverso pra GAIA) uma sugestão "na mesma vibe" da faixa que
+  acabou de tocar, excluindo tudo já tocado NESTA sessão - resolve a queixa
+  real do usuário sobre o Jockie repetir depois de um tempo. Mutuamente
+  exclusivo com Conversa/Intérprete/Tutora (Discord só permite 1 conexão de
+  voz por conta de bot por servidor) - `eris/core/musica.py`.
 
 ### Correções
 - **Intérprete/Tutora entravam na call mas não ouviam nem falavam nada** - achado pelo usuário na prática ("Quando eu peço ela p entrar na call, ela entra mas n conversa comigo"). Causa raiz: discord.py embute o DLL do libopus no pacote, mas NÃO carrega ele automaticamente no import (só versões bem antigas da lib faziam isso) - sem `discord.opus.load_opus`/`_load_default()`, a conexão de voz em si funciona (não depende de opus), mas a decodificação do áudio recebido (`discord-ext-voice-recv`) e o encode do áudio de resposta falham em silêncio, sem nenhum erro visível no Discord. Corrigido chamando `discord.opus._load_default()` no início de `iniciar_bot` (`eris/bot.py`), com aviso no log se falhar.
 - **ERIS não tinha NENHUM log em disco** - achado depurando o bug acima (e de novo depurando por que o Modo Conversa não respondia): rodando via `pythonw.exe` (sem console, como sempre roda em produção), todo `print()` era descartado no vazio - não sobrava nenhum registro do lado do ERIS pra saber SE a call recebeu áudio, SE o webhook pra GAIA foi chamado, ou onde exatamente algo falhou. `eris/main.py::_RedirecionadorLog` (mesmo espírito do `LogRedirector` da GAIA, `ui/qt_painel.py`) agora espelha stdout/stderr pra `logs/AAAA-MM-DD.log`, ativado logo no início de `main()`.
 - **Logs de diagnóstico da captura de voz (2026-08-25)** - mesmo com o log em disco e o libopus carregados, uma tentativa real numa call não gerou NENHUMA linha nova - nem confirmação de recebimento de áudio, nem erro. `eris/core/voz_captura.py`/`voz_call.py` ganharam logs pontuais (throttle de 2s, não por pacote): confirmação de SSRC resolvido pra um usuário, RMS de verdade a cada checagem (`VoiceFilterRMS.calcular_rms`, novo método - antes só devolvia bool), fala fechada (dispatch pra GAIA) ou descartada por curta demais, e aviso 1x se o SSRC nunca resolver pra ninguém. Sem isso, não dava pra saber em qual das 3 camadas (recepção de pacote/resolução de usuário/limiar de volume) o silêncio estava acontecendo.
 - **DEBUG do `discord.ext.voice_recv` ligado (2026-08-25)** - nem os logs pontuais acima dispararam numa tentativa real (nenhum aviso de SSRC não resolvido, nenhum RMS, nada) - a própria extensão de voz (biblioteca de terceiro, `discord-ext-voice-recv`, ainda "experimental" segundo o próprio pacote) loga em DEBUG quando um pacote chega e é IGNORADO antes mesmo do nosso Sink (`PacketRouter.feed_rtp`). `eris/main.py::_ativar_log_debug_voice_recv` liga DEBUG só desse logger (não o `discord.py` inteiro, que já loga heartbeat de texto a cada ~40s) - próximo teste real deve mostrar se o pacote nunca chega no soquete (rede/firewall) ou chega e é descartado por dentro da lib.
+- **`SinkVoz` não filtrava áudio de outros bots (2026-08-25)** - achado discutindo se dava pra rodar 2 instâncias do ERIS na mesma call (uma tocando música, outra ouvindo) - sem o filtro, o áudio que QUALQUER bot manda pro canal (incluindo música tocada por outra instância do ERIS, ou o próprio Jockie) seria capturado e mandado pro Whisper/GAIA como se fosse fala humana. `eris/core/voz_captura.py::SinkVoz.write` agora ignora qualquer pacote de um usuário com `user.bot == True`.
 
 ### Causa raiz encontrada (2026-08-25) - voz na call não escuta nada, bloqueado por DAVE (E2EE) do Discord
 

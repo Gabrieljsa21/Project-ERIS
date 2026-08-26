@@ -136,10 +136,21 @@ def canal_ativo(guild_id):
     return sessao.canal_atual if sessao else None
 
 
+def _sessao_musica_ativa(guild_id):
+    """Import tardio - evita ciclo (`musica.py` também checa `canal_ativo`
+    daqui antes de entrar). Só uma sessão de voz por guild faz sentido
+    (Discord só permite 1 conexão de voz por servidor mesmo), então Música e
+    Intérprete/Tutora/Conversa nunca coexistem."""
+    from eris.core import musica
+    return musica.canal_ativo(guild_id) is not None
+
+
 async def entrar_interprete(voice_channel):
     guild_id = voice_channel.guild.id
     if guild_id in _sessoes:
         return False, "Eu já tô numa call de voz nesse servidor - sai primeiro se quiser trocar de canal/modo."
+    if _sessao_musica_ativa(guild_id):
+        return False, "Eu tô tocando música nesse servidor agora - \"/musica parar\" primeiro se quiser trocar de modo."
     ok, mensagem = await asyncio.to_thread(gaia_webhook.iniciar_interprete, guild_id)
     if not ok:
         return False, mensagem
@@ -167,6 +178,8 @@ async def entrar_tutora(voice_channel):
     guild_id = voice_channel.guild.id
     if guild_id in _sessoes:
         return False, "Eu já tô numa call de voz nesse servidor - sai primeiro se quiser trocar de canal/modo."
+    if _sessao_musica_ativa(guild_id):
+        return False, "Eu tô tocando música nesse servidor agora - \"/musica parar\" primeiro se quiser trocar de modo."
     ativo = await asyncio.to_thread(gaia_webhook.tutora_sessao_ativa)
     if not ativo:
         return False, "Não tem sessão de Tutora ativa ainda - manda \"/iniciar_tutora <idioma>\" primeiro (por DM ou menção)."
@@ -192,6 +205,8 @@ async def entrar_conversa(voice_channel):
     guild_id = voice_channel.guild.id
     if guild_id in _sessoes:
         return False, "Eu já tô numa call de voz nesse servidor - sai primeiro se quiser trocar de canal/modo."
+    if _sessao_musica_ativa(guild_id):
+        return False, "Eu tô tocando música nesse servidor agora - \"/musica parar\" primeiro se quiser trocar de modo."
     sessao = SessaoVoz(guild_id, "conversa")
     try:
         await sessao.entrar(voice_channel)
@@ -213,12 +228,16 @@ async def sair_conversa(guild_id):
 async def sair_qualquer(guild_id):
     """Usado pelo auto-leave (canal ficou sem nenhum humano, ver
     eris/bot.py::on_voice_state_update) e pelo gatilho de menção "@Gala sai"
-    (ver eris/bot.py::on_message) - não precisa saber o modo de antemão."""
+    (ver eris/bot.py::on_message) - não precisa saber o modo de antemão
+    (checa Música também, ver `eris/core/musica.py`)."""
     sessao = _sessoes.get(guild_id)
-    if not sessao:
-        return "Eu não tava em nenhuma call de voz nesse servidor."
-    if sessao.modo == "interprete":
-        return await sair_interprete(guild_id)
-    if sessao.modo == "tutora":
-        return await sair_tutora(guild_id)
-    return await sair_conversa(guild_id)
+    if sessao:
+        if sessao.modo == "interprete":
+            return await sair_interprete(guild_id)
+        if sessao.modo == "tutora":
+            return await sair_tutora(guild_id)
+        return await sair_conversa(guild_id)
+    if _sessao_musica_ativa(guild_id):
+        from eris.core import musica
+        return await musica.sair_musica(guild_id)
+    return "Eu não tava em nenhuma call de voz nesse servidor."

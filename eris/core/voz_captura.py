@@ -110,6 +110,16 @@ class SinkVoz(voice_recv.AudioSink):
         return False  # PCM já decodificado - a extensão faz o decode de Opus pra gente
 
     def write(self, user, data):
+        # 🔥 2026-08-25 (achado real, discutindo se dava pra rodar 2 instâncias
+        # do ERIS na mesma call - uma tocando música, outra ouvindo) - sem
+        # isso, o áudio que QUALQUER bot manda pro canal (incluindo música
+        # tocada por outra instância do ERIS, ou até o Jockie) seria capturado
+        # aqui igual à fala de um humano e mandado pro Whisper/GAIA processar
+        # como se fosse um turno de conversa de verdade - desperdício de
+        # chamada e resposta sem sentido. `user.bot` é um atributo padrão do
+        # discord.py em qualquer Member/User resolvido.
+        if user is not None and getattr(user, "bot", False):
+            return
         if user is None:
             # 🔥 Diagnóstico (2026-08-25) - log 1x por sessão (não por pacote,
             # senão floraria o log) pra saber se ESTE é o motivo de nunca

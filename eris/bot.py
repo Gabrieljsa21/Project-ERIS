@@ -17,7 +17,7 @@ import discord
 from discord import app_commands
 
 from eris import db
-from eris.core import mensagens, moderacao, seguranca, voz_call
+from eris.core import mensagens, moderacao, musica, seguranca, voz_call
 from eris.integrations import gaia_webhook
 
 # 🔥 Gatilho por menção pros 3 modos de voz (portado de discord_bot.py,
@@ -323,6 +323,86 @@ def _registrar_slash_voz(tree):
     tree.add_command(grupo_tutora)
 
 
+def _registrar_slash_musica(tree):
+    """Modo Música - substitui o Jockie Music (pedido do usuário 2026-08-25).
+    Diferente do Conversa/Intérprete/Tutora, aberto a QUALQUER membro do
+    servidor (não só dono) - é uma feature social compartilhada, mesmo
+    espírito de uso que o Jockie já tinha (qualquer um na call podia pedir
+    música)."""
+    grupo_musica = app_commands.Group(name="musica", description="Toca música na call de voz (busca no YouTube)")
+
+    @grupo_musica.command(name="tocar", description="Toca (ou adiciona à fila) uma música - nome, artista ou link")
+    async def _musica_tocar(interaction: discord.Interaction, busca: str):
+        if interaction.guild is None:
+            await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
+            return
+        canal = _voice_channel_do_autor(interaction)
+        if canal is None:
+            await interaction.response.send_message("Você precisa estar numa call de voz do servidor.", ephemeral=True)
+            return
+        await interaction.response.defer()
+        ok, mensagem = await musica.tocar(canal, busca)
+        await interaction.followup.send(mensagem, ephemeral=not ok)
+
+    @grupo_musica.command(name="pular", description="Pula pra próxima música da fila")
+    async def _musica_pular(interaction: discord.Interaction):
+        if interaction.guild is None:
+            await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
+            return
+        await interaction.response.send_message(musica.pular(interaction.guild.id))
+
+    @grupo_musica.command(name="pausar", description="Pausa a música atual")
+    async def _musica_pausar(interaction: discord.Interaction):
+        if interaction.guild is None:
+            await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
+            return
+        await interaction.response.send_message(musica.pausar(interaction.guild.id))
+
+    @grupo_musica.command(name="continuar", description="Retoma a música pausada")
+    async def _musica_continuar(interaction: discord.Interaction):
+        if interaction.guild is None:
+            await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
+            return
+        await interaction.response.send_message(musica.retomar(interaction.guild.id))
+
+    @grupo_musica.command(name="fila", description="Mostra o que está tocando agora e a fila")
+    async def _musica_fila(interaction: discord.Interaction):
+        if interaction.guild is None:
+            await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
+            return
+        estado = musica.obter_fila(interaction.guild.id)
+        if estado is None:
+            await interaction.response.send_message("Não tô tocando nada nesse servidor agora.", ephemeral=True)
+            return
+        linhas = []
+        if estado["tocando_agora"]:
+            f = estado["tocando_agora"]
+            linhas.append(f"🎵 Tocando agora: **{f['titulo']}** - {f['artista']}")
+        else:
+            linhas.append("Nada tocando agora.")
+        if estado["fila"]:
+            linhas.append("\n**Fila:**")
+            linhas.extend(f"{i}. {f['titulo']} - {f['artista']}" for i, f in enumerate(estado["fila"], 1))
+        linhas.append(f"\nModo contínuo (DJ automático): {'ligado' if estado['modo_continuo'] else 'desligado'}")
+        await interaction.response.send_message("\n".join(linhas))
+
+    @grupo_musica.command(name="parar", description="Para a música, limpa a fila e sai da call")
+    async def _musica_parar(interaction: discord.Interaction):
+        if interaction.guild is None:
+            await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
+            return
+        await interaction.response.send_message(await musica.sair_musica(interaction.guild.id))
+
+    @grupo_musica.command(name="dj_automatico", description="Liga/desliga a continuação automática quando a fila acabar")
+    async def _musica_dj(interaction: discord.Interaction, ativo: bool):
+        if interaction.guild is None:
+            await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
+            return
+        await interaction.response.send_message(musica.definir_modo_continuo(interaction.guild.id, ativo))
+
+    tree.add_command(grupo_musica)
+
+
 async def iniciar_bot(token):
     """Sobe o bot e fica ouvindo DMs e canais de servidor até o processo
     encerrar. Não bloqueia quem chamou além do próprio `await` - use
@@ -355,6 +435,7 @@ async def iniciar_bot(token):
     _registrar_slash_moderacao(tree)
     _registrar_slash_exportar(tree, token)
     _registrar_slash_voz(tree)
+    _registrar_slash_musica(tree)
 
     @client.event
     async def on_ready():
@@ -381,12 +462,13 @@ async def iniciar_bot(token):
 
     @client.event
     async def on_voice_state_update(member, before, after):
-        # 🔥 Se o canal onde a Gala está numa call (Intérprete/Tutora) fica sem
-        # NENHUM humano (só ela, ou vazio), ela sai sozinha e para de gastar
-        # Whisper/LLM/TTS à toa numa call fantasma. Roda pra QUALQUER membro que
-        # mude de estado de voz (não só ela mesma) - é o humano saindo que
-        # normalmente esvazia o canal.
-        canal_ativo = voz_call.canal_ativo(member.guild.id)
+        # 🔥 Se o canal onde a Gala está numa call (Intérprete/Tutora/Conversa
+        # OU Música, 2026-08-25) fica sem NENHUM humano (só ela, ou vazio), ela
+        # sai sozinha - pra voz, evita gastar Whisper/LLM/TTS à toa numa call
+        # fantasma; pra música, evita ficar tocando/gastando yt-dlp sozinha
+        # numa call vazia. Roda pra QUALQUER membro que mude de estado de voz
+        # (não só ela mesma) - é o humano saindo que normalmente esvazia o canal.
+        canal_ativo = voz_call.canal_ativo(member.guild.id) or musica.canal_ativo(member.guild.id)
         if canal_ativo is not None and (before.channel == canal_ativo or after.channel == canal_ativo):
             if not any(not m.bot for m in canal_ativo.members):
                 await voz_call.sair_qualquer(member.guild.id)
