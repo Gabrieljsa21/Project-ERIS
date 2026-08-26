@@ -91,6 +91,25 @@ def _buscar_no_youtube(query):
         return None
 
 
+async def _buscar_sugestao_no_youtube(sugestao):
+    """Busca no YouTube uma sugestão do ECHO (`{"artista", "titulo"}`) e
+    SOBRESCREVE o artista/título da faixa resultante pro valor LIMPO que o
+    ECHO devolveu - achado real (2026-08-26, "caos... esta repetindo sempre
+    a msm musica"): usar o título/canal cru do YouTube (cheio de "(Official
+    Video)"/variações de remaster/feat.) pro dedup de sessão E pra semear o
+    pedido da PRÓXIMA sugestão pro ECHO quebrava a comparação de string -
+    "Payphone ft. Wiz Khalifa (Explicit) (Official Music Video)" nunca batia
+    com o "Payphone" limpo que o próprio ECHO usa nos candidatos dele, então
+    a mesma faixa nunca era excluída de verdade e voltava a ser sugerida
+    (confirmado em log: mesma música tocando 3x seguidas)."""
+    faixa = await asyncio.to_thread(_buscar_no_youtube, f"{sugestao['artista']} {sugestao['titulo']}")
+    if faixa is None:
+        return None
+    faixa["artista"] = sugestao["artista"]
+    faixa["titulo"] = sugestao["titulo"]
+    return faixa
+
+
 class _ViewControlesMusica(discord.ui.View):
     """👍/👎/⏭️ na mensagem de "tocando agora" (2026-08-26, pedido do usuário:
     "quando ela toca uma musica, podia aparecer botoes de like, dislike e
@@ -221,11 +240,22 @@ class SessaoMusica:
         if not sugestao:
             print(" [ERIS] Modo contínuo: ECHO não sugeriu nada (sem candidato ou indisponível) - fila esvaziada.")
             return
-        faixa = await asyncio.to_thread(_buscar_no_youtube, f"{sugestao['artista']} {sugestao['titulo']}")
+        faixa = await _buscar_sugestao_no_youtube(sugestao)
         if not faixa:
             print(f" [ERIS] Modo contínuo: não achei \"{sugestao['artista']} - {sugestao['titulo']}\" no YouTube.")
             return
         await self._tocar(faixa)
+
+    async def _tocar_ou_enfileirar(self, faixa):
+        """Toca IMEDIATAMENTE se nada estiver tocando/na fila, senão
+        enfileira - decisão compartilhada por `adicionar` (busca livre) e
+        `iniciar_caos` (sugestão do ECHO já com artista/título corrigidos,
+        ver `_buscar_sugestao_no_youtube`)."""
+        if self.tocando_agora is None and not self.fila:
+            await self._tocar(faixa)
+            return True, "🎵 Tocando."
+        self.fila.append(faixa)
+        return True, f"Adicionado à fila (posição {len(self.fila)}): **{faixa['titulo']}** - {faixa['artista']}"
 
     async def adicionar(self, query):
         """Busca e adiciona - toca IMEDIATAMENTE se nada estiver tocando/na
@@ -235,11 +265,7 @@ class SessaoMusica:
         faixa = await asyncio.to_thread(_buscar_no_youtube, query)
         if not faixa:
             return False, f"Não achei nada pra \"{query}\" no YouTube."
-        if self.tocando_agora is None and not self.fila:
-            await self._tocar(faixa)
-            return True, "🎵 Tocando."
-        self.fila.append(faixa)
-        return True, f"Adicionado à fila (posição {len(self.fila)}): **{faixa['titulo']}** - {faixa['artista']}"
+        return await self._tocar_ou_enfileirar(faixa)
 
     def pular(self):
         if self._vc is None or not (self._vc.is_playing() or self._vc.is_paused()):
@@ -308,7 +334,10 @@ async def iniciar_caos(voice_channel, text_channel):
     sugestao = await asyncio.to_thread(gaia_webhook.pedir_semente_musica, sessao.historico_sessao)
     if not sugestao:
         return False, "Não consegui pensar em nada pra começar agora (ECHO indisponível ou sem candidato) - tenta \"/musica tocar\" com algo específico."
-    return await sessao.adicionar(f"{sugestao['artista']} {sugestao['titulo']}")
+    faixa = await _buscar_sugestao_no_youtube(sugestao)
+    if not faixa:
+        return False, f"Não achei \"{sugestao['artista']} - {sugestao['titulo']}\" no YouTube - tenta de novo."
+    return await sessao._tocar_ou_enfileirar(faixa)
 
 
 async def sair_musica(guild_id):
