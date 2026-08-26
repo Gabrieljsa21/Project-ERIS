@@ -168,6 +168,16 @@ def pedir_proxima_musica(artista_atual, titulo_atual, excluir):
     return {"artista": proxima.get("artista"), "titulo": proxima.get("titulo")}
 
 
+def pedir_feedback_musica(artista, titulo, feedback):
+    """Botões 👍/👎 na mensagem de "tocando agora" (2026-08-26, pedido do
+    usuário: "quando ela toca uma musica, podia aparecer botoes de like,
+    dislike e next") - `feedback`: "positivo" ou "negativo". Best-effort
+    (não bloqueia a UI do Discord esperando resposta detalhada) - devolve
+    True se a GAIA respondeu, False se estava fora do ar."""
+    resultado = _post("/eris/musica_feedback", {"artista": artista, "titulo": titulo, "feedback": feedback})
+    return resultado is not None
+
+
 def pedir_semente_musica(excluir):
     """`/caos` (2026-08-26, pedido do usuário: "ERIS entra no canal de voz...
     sem exigir artista, gênero, música ou qualquer outra referência inicial")

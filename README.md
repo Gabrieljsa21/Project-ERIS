@@ -92,6 +92,11 @@ uma sugestão de partida sem faixa/artista/gênero de semente), depois
 continua na mesma vibe automaticamente igual o DJ automático de sempre.
 Funciona mesmo com perfil totalmente vazio (cai pro que está em alta).
 
+Toda mensagem de "🎵 Tocando agora" (play manual ou continuação automática)
+vem com botões **👍 like** / **👎 dislike** / **⏭️ pular** - like/dislike
+ajustam o perfil musical no ECHO (peso de gênero, incremental), pular
+avança a fila igual `/musica pular`.
+
 Mutuamente exclusivo com Conversa/Intérprete/Tutora DENTRO de uma mesma
 instância (Discord só permite 1 conexão de voz por conta de bot por
 servidor - ver `eris/core/musica.py`). Pra tocar música e conversar/traduzir

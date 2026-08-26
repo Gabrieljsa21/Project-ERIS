@@ -91,6 +91,39 @@ def _buscar_no_youtube(query):
         return None
 
 
+class _ViewControlesMusica(discord.ui.View):
+    """👍/👎/⏭️ na mensagem de "tocando agora" (2026-08-26, pedido do usuário:
+    "quando ela toca uma musica, podia aparecer botoes de like, dislike e
+    next"). `timeout=None` - a música pode tocar por horas, os botões
+    continuam válidos até uma faixa nova substituir a mensagem. Aberto a
+    qualquer membro (mesmo espírito do resto do Modo Música), sem checagem
+    de dono."""
+
+    def __init__(self, guild_id, artista, titulo):
+        super().__init__(timeout=None)
+        self._guild_id = guild_id
+        self._artista = artista
+        self._titulo = titulo
+
+    async def _feedback(self, interaction, valor, resposta):
+        await interaction.response.defer(ephemeral=True)
+        await asyncio.to_thread(gaia_webhook.pedir_feedback_musica, self._artista, self._titulo, valor)
+        await interaction.followup.send(resposta, ephemeral=True)
+
+    @discord.ui.button(emoji="👍", style=discord.ButtonStyle.green)
+    async def _like(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._feedback(interaction, "positivo", "Anotado - mais disso.")
+
+    @discord.ui.button(emoji="👎", style=discord.ButtonStyle.red)
+    async def _dislike(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._feedback(interaction, "negativo", "Anotado - menos disso.")
+
+    @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.secondary)
+    async def _pular(self, interaction: discord.Interaction, button: discord.ui.Button):
+        mensagem = pular(self._guild_id)
+        await interaction.response.send_message(mensagem, ephemeral=True)
+
+
 class SessaoMusica:
     def __init__(self, guild_id):
         self.guild_id = guild_id
@@ -100,6 +133,7 @@ class SessaoMusica:
         self.tocando_agora = None
         self.modo_continuo = True
         self._historico_sessao = []
+        self.text_channel = None
 
     @property
     def canal_atual(self):
@@ -109,8 +143,9 @@ class SessaoMusica:
     def historico_sessao(self):
         return list(self._historico_sessao)
 
-    async def entrar(self, voice_channel):
+    async def entrar(self, voice_channel, text_channel):
         self._vc = await voice_channel.connect()
+        self.text_channel = text_channel
         print(f" [ERIS] Sessão de música conectada em \"{voice_channel.name}\".")
 
     async def sair(self):
@@ -151,6 +186,17 @@ class SessaoMusica:
             self.tocando_agora = None
             return
         print(f" [ERIS] Tocando: {faixa['titulo']} - {faixa['artista']}")
+        # 🔥 ÚNICO lugar que anuncia "tocando agora" com botões - cobre tanto o
+        # play imediato (/musica tocar, /caos) quanto a continuação automática
+        # (_avancar, sem interaction nenhuma pra responder) de forma uniforme.
+        if self.text_channel is not None:
+            view = _ViewControlesMusica(self.guild_id, faixa["artista"], faixa["titulo"])
+            try:
+                await self.text_channel.send(
+                    f"🎵 Tocando agora: **{faixa['titulo']}** - {faixa['artista']}", view=view,
+                )
+            except Exception as e:
+                print(f" [ERIS] Não consegui anunciar a música no canal: {e}")
 
     async def _avancar(self):
         """Chamado quando uma faixa termina - toca a próxima da fila; se a
@@ -183,13 +229,15 @@ class SessaoMusica:
 
     async def adicionar(self, query):
         """Busca e adiciona - toca IMEDIATAMENTE se nada estiver tocando/na
-        fila. Devolve (ok, mensagem)."""
+        fila. Devolve (ok, mensagem). O anúncio detalhado ("tocando agora" +
+        botões de like/dislike/pular) sai à parte via `_tocar` -> `text_
+        channel.send` - aqui é só a confirmação curta da interação."""
         faixa = await asyncio.to_thread(_buscar_no_youtube, query)
         if not faixa:
             return False, f"Não achei nada pra \"{query}\" no YouTube."
         if self.tocando_agora is None and not self.fila:
             await self._tocar(faixa)
-            return True, f"🎵 Tocando agora: **{faixa['titulo']}** - {faixa['artista']}"
+            return True, "🎵 Tocando."
         self.fila.append(faixa)
         return True, f"Adicionado à fila (posição {len(self.fila)}): **{faixa['titulo']}** - {faixa['artista']}"
 
@@ -220,7 +268,7 @@ def canal_ativo(guild_id):
     return sessao.canal_atual if sessao else None
 
 
-async def _obter_ou_criar_sessao(voice_channel):
+async def _obter_ou_criar_sessao(voice_channel, text_channel):
     from eris.core import voz_call  # 🔥 import tardio - evita ciclo (voz_call também checa musica.canal_ativo)
     guild_id = voice_channel.guild.id
     if voz_call.canal_ativo(guild_id) is not None:
@@ -229,21 +277,21 @@ async def _obter_ou_criar_sessao(voice_channel):
     if sessao is None:
         sessao = SessaoMusica(guild_id)
         try:
-            await sessao.entrar(voice_channel)
+            await sessao.entrar(voice_channel, text_channel)
         except Exception as e:
             return None, f"Não consegui entrar na call: {e}"
         _sessoes_musica[guild_id] = sessao
     return sessao, None
 
 
-async def tocar(voice_channel, query):
-    sessao, erro = await _obter_ou_criar_sessao(voice_channel)
+async def tocar(voice_channel, text_channel, query):
+    sessao, erro = await _obter_ou_criar_sessao(voice_channel, text_channel)
     if sessao is None:
         return False, erro
     return await sessao.adicionar(query)
 
 
-async def iniciar_caos(voice_channel):
+async def iniciar_caos(voice_channel, text_channel):
     """`/caos` (2026-08-26, pedido do usuário: "ERIS entra no canal de voz do
     usuário e inicia uma sessão musical contínua... sem exigir artista,
     gênero, música ou qualquer outra referência inicial") - pede pro ECHO
@@ -254,7 +302,7 @@ async def iniciar_caos(voice_channel):
     __init__`), então o motor de continuação de sempre assume sozinho -
     nenhum mecanismo novo além de arranjar a PRIMEIRA busca sem pedir nada
     ao usuário."""
-    sessao, erro = await _obter_ou_criar_sessao(voice_channel)
+    sessao, erro = await _obter_ou_criar_sessao(voice_channel, text_channel)
     if sessao is None:
         return False, erro
     sugestao = await asyncio.to_thread(gaia_webhook.pedir_semente_musica, sessao.historico_sessao)
