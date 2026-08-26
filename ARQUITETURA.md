@@ -171,11 +171,13 @@ instância) pra isso ser só um parâmetro de papel, não reescrita.
   `on_voice_state_update` (sair sozinho de call vazia) valem pros dois -
   este último já era agnóstico de papel, checa `voz_call.canal_ativo` OU
   `musica.canal_ativo`.
-- **Testado com o token real do usuário (2026-08-26)**: `python -m
-  eris.main musica` conecta como `ERIS#0983`, sincroniza só 1 grupo de
-  slash command (`/musica`), sem tocar no `eris.db` nem abrir a porta
-  8772 - validado lendo `logs/2026-08-26.log` (processo derrubado logo
-  depois, teste isolado, sem entrar numa call de verdade ainda).
+- **Validado numa call real (2026-08-26)**: as 2 instâncias JUNTAS no
+  MESMO canal - `ERIS#0983` tocando música (`/musica tocar`) enquanto a
+  instância "completo" respondia por voz no Modo Conversa ao mesmo tempo,
+  confirmado pelo usuário ("consegui usar as 2 ao msm tempo, e gaia me
+  respondeu... e a eris tocando musica"). GAIA sobe as duas sozinha no
+  boot desde então (`garantir_eris_rodando`/`garantir_eris_musica_rodando`,
+  `Project G.A.I.A/assistant/integrations/iris_bridge.py`).
 - **Decisão de `data/eris.db`**: NÃO compartilhado - a instância "musica"
   nem chama `db.inicializar()`, então não tem tabela nenhuma. Donos/config
   de roteamento continuam só na instância "completo" (ela decide quem é

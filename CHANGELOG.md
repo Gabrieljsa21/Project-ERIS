@@ -60,8 +60,10 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
   `.env.musica`, ver `.env.musica.example`), registrando só `/musica` (sem
   moderação, texto livre, `on_message`/webhook de conversa, `eris.db`).
   Papel escolhido por argv, porta de instância única separada
-  (`PORTA_INSTANCIA_UNICA_MUSICA = 8779`). Testado com o token real do
-  usuário: conecta como `ERIS#0983`, sincroniza só o grupo certo. Ver
+  (`PORTA_INSTANCIA_UNICA_MUSICA = 8779`). **Validado numa call real** com
+  as 2 instâncias JUNTAS no mesmo canal - `ERIS#0983` tocando música
+  enquanto a instância "completo" respondia por voz ao mesmo tempo. A GAIA
+  sobe as duas sozinha no boot (`garantir_eris_musica_rodando`). Ver
   "Múltiplas instâncias" em `ARQUITETURA.md`.
 
 ### Correções

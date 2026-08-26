@@ -146,29 +146,6 @@ alternativos:**
    voz numa call ficam bloqueados (a Gala pode ENTRAR e FALAR na call
    normalmente, só não consegue OUVIR ninguém).
 
-### Modo Música - validar numa call real
-
-**Prioridade:** Alta | **Complexidade:** Baixa
-
-Implementado em 2026-08-25 (substitui o Jockie Music - pedido do usuário:
-"quero q alguem seja meu dj exclusivo... qnd eu pedir uma musica, ele
-continue tocando outras em sequencia na mesma vibe"): busca/streaming via
-YouTube (`yt-dlp`, client "android" pra evitar bloqueio de bot sem cookie),
-fila com `/musica tocar/pular/pausar/continuar/fila/parar`, continuação
-automática via Project ECHO quando a fila esvazia (`eris/core/musica.py`).
-Sintaxe/import verificados, busca no YouTube testada isoladamente (extração
-real de URL de stream, sem depender de nenhum cookie) e a continuação testada
-contra o ECHO real (`POST /radar/proxima`) - **mas o playback de verdade
-numa call (FFmpegPCMAudio streamando a URL, o callback `after` avançando a
-fila sozinho) nunca foi testado contra um servidor Discord real** (mesma
-limitação do resto do ERIS, ver seção acima).
-
-Achado relacionado (mesmo dia): `eris/core/voz_captura.py::SinkVoz` não
-filtrava áudio de outros BOTS - se algum dia rodar 2 instâncias do ERIS no
-mesmo canal (ver "Múltiplas instâncias" no Roadmap futuro abaixo), a
-instância ouvindo pegaria a música da instância tocando como se fosse fala
-humana. Corrigido (ignora qualquer áudio de `user.bot == True`).
-
 ### Slash commands de ação que dependem da GAIA
 
 **Prioridade:** Média | **Complexidade:** Média
@@ -181,21 +158,6 @@ webhook reverso; a GAIA roda o handler de sempre e devolve o texto. Falta
 implementar o lado da GAIA que expõe essa lista + o endpoint novo no
 webhook reverso (`/eris/comando`, simétrico ao `/eris/mensagem` já
 existente).
-
-### Múltiplas instâncias - convidar o bot de música pro servidor e validar numa call real
-
-**Prioridade:** Alta | **Complexidade:** Baixa
-
-Implementado em 2026-08-26 (ver "Múltiplas instâncias" em `ARQUITETURA.md`):
-`python -m eris.main musica` sobe uma 2ª instância dedicada (bot `ERIS#0983`,
-token próprio em `.env.musica`), sem moderação/texto livre/db, só `/musica`.
-Testado conectando com o token real (sincronizou o slash command certo,
-sem tocar no `eris.db`) - **ainda falta**: convidar esse 2º bot pro servidor
-de verdade (link OAuth2 com escopo `bot`+`applications.commands`) e validar
-as duas instâncias JUNTAS numa call real (uma tocando música, outra no Modo
-Conversa/Intérprete, no MESMO canal, confirmando que nenhuma escuta a outra
-- a correção do `SinkVoz` (ver seção "Modo Música" acima) cobre isso em
-teoria, nunca testada com 2 bots de verdade em call).
 
 ## Roadmap futuro (registrado, sem decisão de design específica ainda)
 
