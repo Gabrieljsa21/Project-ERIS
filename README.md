@@ -74,6 +74,24 @@ bate-papo comum, sem exigir nada antes; Tutora por voz exige uma sessão de
 texto já iniciada (`/iniciar_tutora <idioma>`, por DM/menção) - o comando de
 voz só entra na call, não inicia a sessão.
 
+## Modo Música (2026-08-25 - substitui o Jockie Music)
+
+`/musica tocar`, `/musica pular`, `/musica pausar`, `/musica continuar`,
+`/musica fila`, `/musica parar`, `/musica dj_automatico` - toca áudio de
+verdade numa call de voz (busca no YouTube via `yt-dlp`, mesma técnica usada
+por praticamente todo bot de música de Discord - zona cinzenta de ToS
+conhecida). Aberto a qualquer membro do servidor (não só dono - feature
+social, mesmo espírito de uso do Jockie). Quando a fila esvazia com
+"DJ automático" ligado (padrão), o ERIS pede pro [Project ECHO](../../Project-ECHO)
+(via webhook reverso pra GAIA) uma sugestão de próxima música "na mesma
+vibe" da que acabou de tocar - nunca repete o que já tocou NESTA sessão.
+
+Mutuamente exclusivo com Conversa/Intérprete/Tutora no mesmo servidor
+(Discord só permite 1 conexão de voz por conta de bot por servidor - ver
+`eris/core/musica.py`). Rodar 2 instâncias do ERIS (2 bots/tokens) pra ter
+música e voz ao mesmo tempo no mesmo canal é um roadmap futuro registrado
+em `TODO.md`.
+
 ## Estado da extração (2026-08-24/25)
 
 Conexão, segurança (donos, rate limit, filtro de roteamento), mensagens

@@ -105,28 +105,46 @@ ver TODO.md) - alta cardinalidade por usuário/servidor, escrita concorrente,
 consultas tipo "top 10". `sqlite3` da própria stdlib, sem dependência nova,
 evita reescrever a camada de persistência quando esses domínios chegarem.
 
-## Sem conflito com o Project ECHO
+## Modo Música (2026-08-25) - fronteira com o Project ECHO
 
 Ao planejar o roadmap futuro, foi levantada a dúvida se o Modo DJ (Project
-ECHO, ainda como ideia registrada) teria alguma sobreposição com a conexão
-de voz do ERIS. Confirmado que não: o ECHO não toca canal de voz do Discord
-nenhuma vez na especificação (`Project ECHO.md`) - a reprodução de música
-acontece via provedor de streaming (Spotify/YouTube Music), nunca numa call
-que o bot entra. Se o Radar Musical for entregue por Discord um dia, é só
-mais uma entrega de notificação de texto, sem peça nova pro ERIS.
+ECHO) teria alguma sobreposição com a conexão de voz do ERIS. Na
+especificação original não tinha (ECHO não tocava call nenhuma) - mas o
+usuário depois pediu pra substituir o Jockie Music de verdade ("quero q
+alguem seja meu dj exclusivo... qnd eu pedir uma musica, ele continue
+tocando outras em sequencia na mesma vibe"), o que EXIGE tocar áudio numa
+call. Fronteira aplicada, sem sobreposição:
+
+- **ECHO nunca toca áudio** - continua só metadado/ranking (`GET /radar/
+  proxima`, `echo/core/continuacao.py`). Não sabe o que é YouTube, não sabe
+  o que é Discord.
+- **ERIS faz TUDO que é áudio** - busca/extração via `yt-dlp`
+  (`eris/core/musica.py`), conexão de voz, fila, playback. Quando a fila
+  esvazia com "DJ automático" ligado, pede pra GAIA (`eris.integrations.
+  gaia_webhook.pedir_proxima_musica`) uma sugestão - a GAIA repassa pro ECHO
+  (`POST /eris/proxima_musica` no bridge dela, que chama `echo_client.
+  sugerir_proxima_musica`) e devolve `{"artista", "titulo"}`. O ERIS busca
+  ESSE nome no YouTube e toca - nunca inventa por conta própria o que vem
+  depois.
+- **Dedup de 2 camadas, propósitos diferentes**: o ERIS manda a lista de
+  "já tocado NESTA sessão de call" (`_historico_sessao`, em memória, reseta
+  quando a sessão acaba) pro ECHO excluir - resolve a queixa real do
+  usuário sobre o Jockie repetir depois de um tempo. O ECHO AINDA aplica
+  por baixo o dedup de 90 dias do Radar semanal (`core.recomendador.
+  ranquear` chama `historico.foi_recomendada_recentemente`) como segunda
+  camada, mas o de sessão é o que resolve o problema relatado.
+- **Mutuamente exclusivo com Conversa/Intérprete/Tutora** (não simultâneo)
+  DENTRO de uma mesma instância do ERIS - Discord só permite 1 conexão de
+  voz por conta de bot por servidor. Rodar Música e voz ao mesmo tempo no
+  mesmo canal exige uma 2ª instância/token de bot - ver "Próximo passo
+  confirmado" em `TODO.md`.
 
 ## Pendências
 
 - **Slash commands de ação via webhook** (`/abrir`, `/jornalista`, etc.) -
   desenho fechado, implementação fora do escopo (ponto 3 acima).
-- Nenhuma validação contra um servidor/bot Discord real ainda foi feita -
-  ver README.md, "Estado da extração".
-- **Voz na call não escuta nada - bloqueado por DAVE (E2EE), não é bug
-  nosso** (validado com call real em 2026-08-25, ver TODO.md pro detalhe
-  completo com fontes) - `discord-ext-voice-recv` (a lib de terceiro que
-  usamos pra RECEBER áudio) ainda não decripta o protocolo de
-  criptografia ponta a ponta que o Discord tornou obrigatório pra toda
-  call desde março de 2026 (issue aberta no repo da lib, sem resolução
-  ainda). A Gala consegue ENTRAR e FALAR na call normalmente (o envio usa
-  o cliente principal do `discord.py`, que já suporta DAVE via o pacote
-  `davey`) - só não consegue OUVIR ninguém.
+- Nenhuma validação contra um servidor/bot Discord real ainda foi feita pro
+  resto do ERIS (moderação/exportação/texto) - ver README.md, "Estado da
+  extração". Voz por call (Conversa/Intérprete/Tutora) JÁ foi validada com
+  sucesso em 2026-08-25 (ver TODO.md, bloqueio DAVE resolvido) - Modo
+  Música ainda não (playback numa call real, ver TODO.md).

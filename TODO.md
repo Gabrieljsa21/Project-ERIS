@@ -146,6 +146,29 @@ alternativos:**
    voz numa call ficam bloqueados (a Gala pode ENTRAR e FALAR na call
    normalmente, só não consegue OUVIR ninguém).
 
+### Modo Música - validar numa call real
+
+**Prioridade:** Alta | **Complexidade:** Baixa
+
+Implementado em 2026-08-25 (substitui o Jockie Music - pedido do usuário:
+"quero q alguem seja meu dj exclusivo... qnd eu pedir uma musica, ele
+continue tocando outras em sequencia na mesma vibe"): busca/streaming via
+YouTube (`yt-dlp`, client "android" pra evitar bloqueio de bot sem cookie),
+fila com `/musica tocar/pular/pausar/continuar/fila/parar`, continuação
+automática via Project ECHO quando a fila esvazia (`eris/core/musica.py`).
+Sintaxe/import verificados, busca no YouTube testada isoladamente (extração
+real de URL de stream, sem depender de nenhum cookie) e a continuação testada
+contra o ECHO real (`POST /radar/proxima`) - **mas o playback de verdade
+numa call (FFmpegPCMAudio streamando a URL, o callback `after` avançando a
+fila sozinho) nunca foi testado contra um servidor Discord real** (mesma
+limitação do resto do ERIS, ver seção acima).
+
+Achado relacionado (mesmo dia): `eris/core/voz_captura.py::SinkVoz` não
+filtrava áudio de outros BOTS - se algum dia rodar 2 instâncias do ERIS no
+mesmo canal (ver "Múltiplas instâncias" no Roadmap futuro abaixo), a
+instância ouvindo pegaria a música da instância tocando como se fosse fala
+humana. Corrigido (ignora qualquer áudio de `user.bot == True`).
+
 ### Slash commands de ação que dependem da GAIA
 
 **Prioridade:** Média | **Complexidade:** Média
@@ -158,6 +181,36 @@ webhook reverso; a GAIA roda o handler de sempre e devolve o texto. Falta
 implementar o lado da GAIA que expõe essa lista + o endpoint novo no
 webhook reverso (`/eris/comando`, simétrico ao `/eris/mensagem` já
 existente).
+
+## Próximo passo confirmado: múltiplas instâncias do ERIS
+
+**Prioridade:** Alta | **Complexidade:** Média | **Status:** próximo a implementar (pedido do usuário 2026-08-25, depois de fechar o Modo Música)
+
+Pergunta real do usuário: dá pra ter um ERIS tocando música e outro
+conversando/traduzindo AO MESMO TEMPO no MESMO canal (mesmo espírito do
+Jockie, que usa 4 bots separados - Jockie Music/Music 1/2/3)? **Sim,
+tecnicamente** - o limite real do Discord é 1 conexão de voz por CONTA de
+bot por servidor, não por canal; duas contas de bot diferentes podem estar
+no mesmo canal ao mesmo tempo.
+
+Precisa de:
+1. Uma 2ª aplicação de bot no Discord Developer Portal (token separado,
+   convite separado pro servidor) - só o usuário pode criar isso.
+2. Rodar um 2º processo do ERIS com esse token (ex.: `DISCORD_BOT_TOKEN`
+   diferente por instância via `.env` separado ou variável de ambiente na
+   hora de subir) - o código já é modular o bastante (Música e voz já são
+   mutuamente exclusivos DENTRO de uma instância, ver `eris/core/musica.py`/
+   `voz_call.py`) pra isso não exigir reescrever nada, é mais trabalho de
+   infraestrutura/deploy (2 tokens, 2 processos, talvez 2 portas de API/
+   instância única) do que de código novo.
+3. Decidir se as 2 instâncias compartilham o mesmo `data/eris.db`
+   (donos/config de roteamento) ou têm cada uma o seu - preservar histórico/
+   moderação de uma instância "principal" enquanto a "de música" fica mais
+   leve provavelmente faz mais sentido.
+
+Achado relacionado já corrigido: `SinkVoz` agora ignora áudio de outros bots
+(ver seção "Modo Música" acima) - sem isso, a instância ouvindo pegaria a
+música da instância tocando como se fosse um humano falando.
 
 ## Roadmap futuro (registrado, sem decisão de design específica ainda)
 

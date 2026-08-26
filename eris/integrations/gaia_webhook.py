@@ -147,3 +147,22 @@ def pedir_turno_tutora(guild_id, audio_pcm_16k_mono):
     if not resultado or not resultado.get("caminho_audio"):
         return None
     return resultado.get("caminho_audio")
+
+
+# --------------------------------------------------------------------------
+# Modo Música (fila com continuação "na mesma vibe", ver eris/core/musica.py)
+# --------------------------------------------------------------------------
+
+def pedir_proxima_musica(artista_atual, titulo_atual, excluir):
+    """Pede pra GAIA (que consulta o Project ECHO) uma sugestão de próxima
+    música na mesma vibe da que acabou de tocar - a GAIA decide QUAL música
+    (motor determinístico do ECHO), o ERIS só busca/toca. `excluir`: lista de
+    "artista::titulo" já tocados NESTA sessão (dedup de curto prazo). Devolve
+    {"artista", "titulo"} ou None se não achou nada / GAIA fora do ar."""
+    resultado = _post("/eris/proxima_musica", {
+        "artista_atual": artista_atual, "titulo_atual": titulo_atual, "excluir": list(excluir),
+    })
+    if not resultado or not resultado.get("proxima"):
+        return None
+    proxima = resultado["proxima"]
+    return {"artista": proxima.get("artista"), "titulo": proxima.get("titulo")}

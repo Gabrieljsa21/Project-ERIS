@@ -11,7 +11,15 @@ dependencies = [
     "numpy",
     "requests>=2.31",
     "python-dotenv",
+    "yt-dlp",
 ]
+# 🔥 yt-dlp (2026-08-25, Modo Música - substitui o Jockie Music, pedido do
+# usuário) - busca/extração de áudio streamável do YouTube pra tocar na call
+# (eris/core/musica.py). Não usa cookie/login por padrão (client "android" do
+# extractor, que historicamente não exige o proof-of-origin token que o
+# client "web" passou a exigir desde 2024) - ver ARQUITETURA.md pra
+# fallback via YOUTUBE_COOKIES_FILE se isso parar de funcionar no futuro.
+#
 # 🔥 discord-ext-voice-recv-dave/PyNaCl/numpy (2026-08-25) - recepção de áudio de
 # voz pro Modo Intérprete/Tutora/Conversa (ver eris/core/voz_captura.py, eris/core/
 # vad.py). libopus não precisa ser INSTALADO à parte no Windows - discord.py já
