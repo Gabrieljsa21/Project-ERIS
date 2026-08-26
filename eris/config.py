@@ -22,6 +22,13 @@ PORTA_API_ERIS = 8772
 # chegar a autenticar o MESMO token duas vezes.
 PORTA_INSTANCIA_UNICA = 8773
 
+# 🔥 Trava de instância única SEPARADA pro papel "musica" (2ª instância do
+# ERIS, bot Discord PRÓPRIO - ver `eris/main.py`/`.env.musica.example`) - tem
+# que ser outra porta, senão a 2ª instância se acha duplicada da 1ª e recusa
+# subir. Essa instância não abre `PORTA_API_ERIS` (não precisa que a GAIA
+# chame NELA - só ela chamando a GAIA via `gaia_webhook`).
+PORTA_INSTANCIA_UNICA_MUSICA = 8779
+
 # 🔥 Base do webhook reverso (ERIS -> GAIA) - mesma porta do servidor
 # `integrations/iris_bridge.py` que já atende MOIRAI/HESTIA/IRIS (8766), só
 # com rotas novas (`/eris/mensagem`, `/eris/comando`). Ajustável via .env pra

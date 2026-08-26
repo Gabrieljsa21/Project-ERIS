@@ -54,6 +54,15 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
   real do usuário sobre o Jockie repetir depois de um tempo. Mutuamente
   exclusivo com Conversa/Intérprete/Tutora (Discord só permite 1 conexão de
   voz por conta de bot por servidor) - `eris/core/musica.py`.
+- **Múltiplas instâncias (2026-08-26) - Música e voz simultâneas no mesmo
+  canal** - resolve o mutuamente exclusivo acima: `python -m eris.main
+  musica` sobe uma 2ª instância dedicada (bot Discord PRÓPRIO, token em
+  `.env.musica`, ver `.env.musica.example`), registrando só `/musica` (sem
+  moderação, texto livre, `on_message`/webhook de conversa, `eris.db`).
+  Papel escolhido por argv, porta de instância única separada
+  (`PORTA_INSTANCIA_UNICA_MUSICA = 8779`). Testado com o token real do
+  usuário: conecta como `ERIS#0983`, sincroniza só o grupo certo. Ver
+  "Múltiplas instâncias" em `ARQUITETURA.md`.
 
 ### Correções
 - **Intérprete/Tutora entravam na call mas não ouviam nem falavam nada** - achado pelo usuário na prática ("Quando eu peço ela p entrar na call, ela entra mas n conversa comigo"). Causa raiz: discord.py embute o DLL do libopus no pacote, mas NÃO carrega ele automaticamente no import (só versões bem antigas da lib faziam isso) - sem `discord.opus.load_opus`/`_load_default()`, a conexão de voz em si funciona (não depende de opus), mas a decodificação do áudio recebido (`discord-ext-voice-recv`) e o encode do áudio de resposta falham em silêncio, sem nenhum erro visível no Discord. Corrigido chamando `discord.opus._load_default()` no início de `iniciar_bot` (`eris/bot.py`), com aviso no log se falhar.

@@ -86,11 +86,20 @@ social, mesmo espírito de uso do Jockie). Quando a fila esvazia com
 (via webhook reverso pra GAIA) uma sugestão de próxima música "na mesma
 vibe" da que acabou de tocar - nunca repete o que já tocou NESTA sessão.
 
-Mutuamente exclusivo com Conversa/Intérprete/Tutora no mesmo servidor
-(Discord só permite 1 conexão de voz por conta de bot por servidor - ver
-`eris/core/musica.py`). Rodar 2 instâncias do ERIS (2 bots/tokens) pra ter
-música e voz ao mesmo tempo no mesmo canal é um roadmap futuro registrado
-em `TODO.md`.
+Mutuamente exclusivo com Conversa/Intérprete/Tutora DENTRO de uma mesma
+instância (Discord só permite 1 conexão de voz por conta de bot por
+servidor - ver `eris/core/musica.py`). Pra tocar música e conversar/traduzir
+ao mesmo tempo no MESMO canal, suba uma 2ª instância dedicada:
+
+```bash
+python -m eris.main musica
+```
+
+Precisa de `DISCORD_BOT_TOKEN` (bot Discord PRÓPRIO, aplicação separada) em
+`.env.musica` (ver `.env.musica.example`) - sem o argumento `musica`, sobe
+o papel "completo" de sempre, lendo `.env`. A instância "musica" só
+registra `/musica` (sem moderação/texto livre/`eris.db`) - ver "Múltiplas
+instâncias" em `ARQUITETURA.md`.
 
 ## Estado da extração (2026-08-24/25)
 
