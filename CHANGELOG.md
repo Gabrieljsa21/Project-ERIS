@@ -5,8 +5,8 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
 
 ## [Unreleased]
 
-### Correções
-- **👎 não removia candidatos do mesmo artista já puxados pro buffer local (2026-08-27)** - reportado pelo usuário: "deveria ir tirando as votadas da lista das 50 e completar com novas". O ECHO já invalidava o artista inteiro no pool dele, mas isso nunca alcançava a fila lógica local do ERIS (requisito do plano original, nunca conectado no código final). Corrigido: um 👎 agora remove da fila lógica tudo do mesmo artista e reabastece na hora; streams já resolvidos continuam intactos.
+### Alterado
+- **Um 👎 numa faixa não afeta mais o resto do mesmo artista (2026-08-27)** - implementado E revertido no mesmo dia: primeiro adicionei `SessaoMusica.remover_artista_da_fila_logica` pra limpar candidatos do mesmo artista da fila lógica local num 👎 (espelhando `pool.invalidar_relacionados` do ECHO), depois o usuário apontou que a premissa em si estava errada - "um 👎 em 1 musica n pode condenar todas desse artista. Assim como o like n aprova todas tbm, algumas eu gosto e outras nao". Revertido - voto agora fica estritamente na faixa exata, nunca no artista inteiro (ver changelog do [Project ECHO](../../Project-ECHO)).
 
 ## [0.1.0] - 2026-08-24 a 2026-08-27: Extração completa - moderação, voz e Modo Música com buffer em 3 camadas (PRs #1 a #27)
 

@@ -173,17 +173,20 @@ retorno da slash command original. `_ViewControlesMusica` (discord.ui.View,
   histórico na hora se a faixa nunca passou pelo Radar, resolve o gênero
   sozinho, e agora tira a faixa exata do pool - "Musicas sem voto não saem
   do pool" no ECHO). Resposta ephemeral, não interrompe a reprodução.
-  Aberto a QUALQUER membro (alimenta só o perfil de quem clicou). 🔥 Um 👎
-  também chama `SessaoMusica.remover_artista_da_fila_logica` (2026-08-27,
-  achado pelo usuário: "deveria ir tirando as votadas da lista das 50 e
-  completar com novas") - requisito do plano original ("feedback negativo
-  reorganiza músicas ainda não preparadas, streams já resolvidos
-  permanecem") nunca tinha sido conectado no código final; o ECHO já
-  invalidava o artista inteiro no POOL DELE, mas isso nunca alcançava
-  candidatos JÁ PUXADOS pro buffer local do ERIS antes do dislike. Remove
-  da fila LÓGICA (camada 2) tudo do mesmo artista e dispara
-  reabastecimento na hora (não espera cair abaixo do mínimo de 20);
-  streams JÁ resolvidos (camada 3) continuam intactos.
+  Aberto a QUALQUER membro (alimenta só o perfil de quem clicou).
+
+  🔥 **Limpeza da fila lógica por artista - adicionada e revertida no
+  mesmo dia (2026-08-27)** - o requisito original do plano ("feedback
+  negativo reorganiza músicas ainda não preparadas... streams já
+  resolvidos permanecem") nunca tinha sido conectado no código final;
+  implementei `SessaoMusica.remover_artista_da_fila_logica` pra remover da
+  fila lógica tudo do mesmo artista num 👎, espelhando o `pool.
+  invalidar_relacionados` do ECHO. O usuário apontou o problema de fundo:
+  "um 👎 em 1 musica n pode condenar todas desse artista. Assim como o
+  like n aprova todas tbm, algumas eu gosto e outras nao" - o requisito
+  original do plano JÁ estava errado nessa premissa. Revertido junto com
+  `pool.invalidar_relacionados` no ECHO - voto agora fica estritamente por
+  FAIXA, nunca por artista.
 - ▶️ (pedido do usuário: "Adicionar botão de play, para caso queira voltar
   em alguma musica que tocou") - `adicionar_por_identidade` reusa a mesma
   busca/enfileiramento de `/musica tocar`, a partir do artista/título JÁ
