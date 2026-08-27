@@ -153,14 +153,20 @@ def pedir_turno_tutora(guild_id, audio_pcm_16k_mono):
 # Modo Música (fila com continuação "na mesma vibe", ver eris/core/musica.py)
 # --------------------------------------------------------------------------
 
-def pedir_proxima_musica(artista_atual, titulo_atual, excluir):
+def pedir_proxima_musica(discord_user_id, artista_atual, titulo_atual, excluir, penalidades_sessao=None):
     """Pede pra GAIA (que consulta o Project ECHO) uma sugestão de próxima
     música na mesma vibe da que acabou de tocar - a GAIA decide QUAL música
     (motor determinístico do ECHO), o ERIS só busca/toca. `excluir`: lista de
-    "artista::titulo" já tocados NESTA sessão (dedup de curto prazo). Devolve
+    "artista::titulo" já tocados NESTA sessão (dedup de curto prazo).
+
+    🔥 Por pessoa (2026-08-26) - `discord_user_id` é de quem INICIOU a sessão
+    (Modo Música é social, cada pessoa tem seu próprio pool/perfil no ECHO).
+    `penalidades_sessao`: dict "artista::nome"/"genero::nome" -> contagem,
+    reduz score de quem já tocou demais NESTA sessão (diversidade). Devolve
     {"artista", "titulo"} ou None se não achou nada / GAIA fora do ar."""
     resultado = _post("/eris/proxima_musica", {
-        "artista_atual": artista_atual, "titulo_atual": titulo_atual, "excluir": list(excluir),
+        "discord_user_id": str(discord_user_id), "artista_atual": artista_atual, "titulo_atual": titulo_atual,
+        "excluir": list(excluir), "penalidades_sessao": penalidades_sessao,
     })
     if not resultado or not resultado.get("proxima"):
         return None
@@ -168,24 +174,63 @@ def pedir_proxima_musica(artista_atual, titulo_atual, excluir):
     return {"artista": proxima.get("artista"), "titulo": proxima.get("titulo")}
 
 
-def pedir_feedback_musica(artista, titulo, feedback):
+def pedir_feedback_musica(discord_user_id, artista, titulo, feedback):
     """Botões 👍/👎 na mensagem de "tocando agora" (2026-08-26, pedido do
     usuário: "quando ela toca uma musica, podia aparecer botoes de like,
-    dislike e next") - `feedback`: "positivo" ou "negativo". Best-effort
-    (não bloqueia a UI do Discord esperando resposta detalhada) - devolve
-    True se a GAIA respondeu, False se estava fora do ar."""
-    resultado = _post("/eris/musica_feedback", {"artista": artista, "titulo": titulo, "feedback": feedback})
+    dislike e next") - `discord_user_id` é de quem CLICOU (alimenta só o
+    perfil dessa pessoa, nunca o de quem iniciou a sessão). `feedback`:
+    "positivo" ou "negativo". Best-effort (não bloqueia a UI do Discord
+    esperando resposta detalhada) - devolve True se a GAIA respondeu, False
+    se estava fora do ar."""
+    resultado = _post("/eris/musica_feedback", {
+        "discord_user_id": str(discord_user_id), "artista": artista, "titulo": titulo, "feedback": feedback,
+    })
     return resultado is not None
 
 
-def pedir_semente_musica(excluir):
+def pedir_feedback_passivo_musica(discord_user_id, artista, titulo, fracao_tocada, pulado, momento_do_skip=None):
+    """Sinal fraco/acumulativo (2026-08-26) - fração tocada/skip medido pelo
+    ERIS (`SessaoMusica._tocar`/`_avancar`), enviado pra GAIA depois de cada
+    faixa. Best-effort, mesmo espírito de `pedir_feedback_musica` - não
+    bloqueia nada visível ao usuário."""
+    resultado = _post("/eris/musica_feedback_passivo", {
+        "discord_user_id": str(discord_user_id), "artista": artista, "titulo": titulo,
+        "fracao_tocada": fracao_tocada, "pulado": bool(pulado), "momento_do_skip": momento_do_skip,
+    })
+    return resultado is not None
+
+
+def pedir_semente_musica(discord_user_id, excluir):
     """`/caos` (2026-08-26, pedido do usuário: "ERIS entra no canal de voz...
     sem exigir artista, gênero, música ou qualquer outra referência inicial")
-    - pede uma sugestão de PARTIDA baseada só no perfil/histórico musical,
-    sem faixa atual pra semear (diferente de `pedir_proxima_musica`). Mesmo
-    contrato de retorno: {"artista", "titulo"} ou None."""
-    resultado = _post("/eris/musica_caos", {"excluir": list(excluir)})
+    - pede uma sugestão de PARTIDA baseada só no perfil/histórico musical de
+    `discord_user_id` (quem chamou o comando), sem faixa atual pra semear
+    (diferente de `pedir_proxima_musica`). Mesmo contrato de retorno:
+    {"artista", "titulo"} ou None."""
+    resultado = _post("/eris/musica_caos", {"discord_user_id": str(discord_user_id), "excluir": list(excluir)})
     if not resultado or not resultado.get("semente"):
         return None
     semente = resultado["semente"]
     return {"artista": semente.get("artista"), "titulo": semente.get("titulo")}
+
+
+def pedir_aprovadas_musica(discord_user_id):
+    """`/musica aprovadas` (2026-08-26) - lista de faixas com 👍 de quem
+    chamou. Devolve sempre uma lista (vazia se a GAIA estiver fora do ar)."""
+    resultado = _post("/eris/musica_aprovadas", {"discord_user_id": str(discord_user_id)})
+    return (resultado or {}).get("aprovadas", [])
+
+
+def pedir_desaprovadas_musica(discord_user_id):
+    """`/musica desaprovadas` (2026-08-26) - lista de faixas com 👎 de quem
+    chamou. Devolve sempre uma lista (vazia se a GAIA estiver fora do ar)."""
+    resultado = _post("/eris/musica_desaprovadas", {"discord_user_id": str(discord_user_id)})
+    return (resultado or {}).get("desaprovadas", [])
+
+
+def pedir_voto_musica(discord_user_id, artista, titulo):
+    """"(👍)"/"(👎)" na mensagem de "tocando agora" (2026-08-27, pedido do
+    usuário) - devolve `"positivo"`/`"negativo"`/`None` (None também se a
+    GAIA estiver fora do ar - nunca bloqueia o anúncio por causa disso)."""
+    resultado = _post("/eris/musica_voto", {"discord_user_id": str(discord_user_id), "artista": artista, "titulo": titulo})
+    return (resultado or {}).get("voto")

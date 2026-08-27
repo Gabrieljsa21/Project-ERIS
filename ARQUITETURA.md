@@ -151,26 +151,187 @@ mesmo `SessaoMusica.adicionar` de sempre a partir daí - nenhum mecanismo
 novo de reprodução/continuação, só a primeira busca vem do ECHO em vez do
 usuário.
 
-**Botões 👍/👎/⏭️ na mensagem de "tocando agora" (2026-08-26)** - pedido do
-usuário: "quando ela toca uma musica, podia aparecer botoes de like,
-dislike e next". `_tocar()` (`eris/core/musica.py`) virou o ÚNICO lugar
-que anuncia a faixa no canal de TEXTO (`SessaoMusica.text_channel`,
-guardado na entrada da sessão) - cobre tanto o play imediato quanto a
-continuação automática (`_avancar`, sem interaction nenhuma pra responder)
-de forma uniforme, em vez de só o retorno da slash command original.
-`_ViewControlesMusica` (discord.ui.View, `timeout=None`) processa cada
-clique:
+**Botões ⏯️/⏭️/👍/👎/▶️/📋 na mensagem de "tocando agora" (2026-08-26/27)** -
+pedido do usuário: "quando ela toca uma musica, podia aparecer botoes de
+like, dislike e next", depois expandido ("Além dos controles atuais,
+adicionaria: pausar/retomar, exibir a fila, tocar diretamente..."). `_tocar()`
+(`eris/core/musica.py`) virou o ÚNICO lugar que anuncia a faixa no canal de
+TEXTO (`SessaoMusica.text_channel`, guardado na entrada da sessão) - cobre
+tanto o play imediato quanto a continuação automática (`_avancar`, sem
+interaction nenhuma pra responder) de forma uniforme, em vez de só o
+retorno da slash command original. `_ViewControlesMusica` (discord.ui.View,
+`timeout=None`) processa cada clique, NESSA ordem (pedido do usuário):
+- ⏯️ (novo, 2026-08-27) - pausa se tocando, retoma se pausado (`_vc.
+  is_paused()` decide qual). Símbolo COMBINADO fixo (não troca ⏸️↔️▶️ ao
+  clicar) - um emoji dinâmico colidiria visualmente com o botão de replay
+  (▶️, sempre presente na mesma mensagem). Restrito a quem iniciou a sessão.
+- ⏭️ chama a mesma função `pular()` de sempre (`/musica pular`), restrito a
+  quem iniciou a sessão.
 - 👍/👎 chamam `gaia_webhook.pedir_feedback_musica` -> `POST /eris/
   musica_feedback` no bridge da GAIA -> `echo_client.enviar_feedback_
   musica` -> `POST /radar/feedback_ao_vivo` no ECHO (cria a entrada no
   histórico na hora se a faixa nunca passou pelo Radar, resolve o gênero
-  sozinho). Resposta ephemeral, não interrompe a reprodução.
-- ⏭️ chama a mesma função `pular()` de sempre (`/musica pular`).
+  sozinho, e agora tira a faixa exata do pool - "Musicas sem voto não saem
+  do pool" no ECHO). Resposta ephemeral, não interrompe a reprodução.
+  Aberto a QUALQUER membro (alimenta só o perfil de quem clicou).
+- ▶️ (pedido do usuário: "Adicionar botão de play, para caso queira voltar
+  em alguma musica que tocou") - `adicionar_por_identidade` reusa a mesma
+  busca/enfileiramento de `/musica tocar`, a partir do artista/título JÁ
+  guardados na View (não precisa perguntar nada). Como cada mensagem de
+  "tocando agora" antiga continua no canal com seus próprios botões válidos,
+  voltar numa música é só rolar até a mensagem dela e clicar. Aberto a
+  qualquer membro (mesmo espírito de "adicionar à fila", não é controle de
+  estado). Exige uma sessão JÁ ativa nesse servidor.
+- 📋 (novo, 2026-08-27) - mesmo texto de `/musica fila`
+  (`formatar_estado_fila`, compartilhado pelos dois pra não duplicar
+  formatação), ephemeral. Aberto a qualquer membro (só consulta).
+
+🔥 **Avaliação de rodada de design (2026-08-27)** - o usuário propôs trocar
+👍/👎 por REAÇÕES nativas do Discord (pré-adicionadas pela ERIS, com
+"estado selecionado" visual e contagem). Avaliado e adiado: reação resolve
+bem o estado "você reagiu NESTA mensagem" (nativo do cliente Discord), mas
+NÃO resolve "essa música já foi avaliada antes, numa mensagem ANTERIOR" -
+isso é impossível pela API (reação é sempre por mensagem, o bot não pode
+marcar uma reação como "já clicada" por alguém que nunca clicou nela).
+Mantido como botão por ora; o "já avaliada antes" virou texto simples (ver
+"(👍)"/"(👎)" abaixo) em vez de tentar simular visualmente.
+
+**Título com link pro vídeo (2026-08-27, pedido do usuário)** - `_titulo_
+com_link` (`eris/core/musica.py`) transforma o título do anúncio num link
+markdown pra `faixa["url_pagina"]` (já vem de `_buscar_no_youtube`, sempre
+presente numa faixa resolvida) - cai pro título em negrito puro se faltar
+por algum motivo, nunca quebra o anúncio. Só na linha de "tocando agora",
+não na listagem de fila (`/musica fila`/📋) - fora do escopo do pedido.
+
+**"(👍)"/"(👎)" no final da linha de anúncio (2026-08-27)** - se a faixa que
+está tocando agora já foi avaliada antes por quem INICIOU a sessão
+(`SessaoMusica._sufixo_voto`, `POST /eris/musica_voto` no bridge da GAIA ->
+`echo_client.obter_voto_musica` -> `GET /perfil/voto` no ECHO). Roda DEPOIS
+de `self._vc.play()` já ter começado - atrasa só o texto do anúncio, nunca
+o áudio (mesma regra de zero-espera-perceptível de sempre).
 
 Views não são persistidas entre reinícios do processo (mesma limitação já
 aceita pro resto do estado da sessão, `_sessoes_musica` em memória) -
 botões de uma call anterior ao restart simplesmente param de responder,
 consistente com a sessão em si já não existir mais.
+
+## Buffer em 3 camadas + dono da sessão + feedback passivo (2026-08-26)
+
+Investigando "eu mandei varias playlists, ela n se baseia nelas como meu
+gosto?", o usuário pediu um redesenho completo do Modo Música pra garantir
+**zero espera perceptível entre músicas** ("espera perceptível entre
+músicas é fallback/falha de pré-carregamento, nunca comportamento normal
+do `/caos`"). O ECHO já resolve a camada 1 (pool pessoal, 100-300, lado
+dele - ver `ARQUITETURA.md` do [Project ECHO](../../Project-ECHO)). Aqui
+dentro, `SessaoMusica` (`eris/core/musica.py`) ganhou mais 2 camadas:
+
+- **Camada 2, `fila_logica`** (alvo 20-50) - identidade da faixa (artista/
+  título) já puxada do pool do ECHO via `gaia_webhook.pedir_proxima_musica`/
+  `pedir_semente_musica`, ainda SEM stream resolvido no YouTube.
+- **Camada 3, `fila`** (alvo 5-10) - streams JÁ resolvidos (`url_stream`
+  pronto), com `resolvido_em` (timestamp) pra detectar link do YouTube
+  velho demais (`_STREAM_MAX_IDADE_SEGUNDOS`, 1h) e re-resolver ANTES de
+  tocar, em vez de tentar tocar um link expirado.
+
+`_avancar()` (chamado quando uma faixa termina) só CONSOME o topo da
+camada 3 - nenhuma chamada de rede no caminho crítico. As 2 camadas se
+reabastecem em BACKGROUND (`_repor_fila_logica`/`_resolver_streams`, via
+`asyncio.create_task`, guardadas contra execução concorrente duplicada)
+sempre que caem abaixo do mínimo, nunca bloqueando a reprodução atual. Cai
+pra resolver a camada 2 na hora (ainda sem bloquear indefinidamente) só se
+a 3 já secou, e só pede uma sugestão nova SÍNCRONA ao ECHO (mesmo caminho
+de antes desta reescrita) se as duas primeiras já estiverem vazias - esse
+é o fallback raro, não o caminho normal.
+
+**Diversidade de sessão sem conhecer gênero** - o ERIS não sabe gênero
+(isso é conhecimento exclusivo do ECHO), então `_penalidades_sessao` só
+penaliza por ARTISTA repetido demais NESTA sessão (`_contagem_artistas_
+sessao`, incrementado quando uma identidade entra na camada 2), mandado
+junto em toda chamada de continuação/semente pro ECHO aplicar.
+
+**Fila lógica persistida** (`data/fila_sessao_<guild_id>.json`) - sobrevive
+a um restart do ERIS enquanto a call continua ativa, pra não perder
+identidades já consumidas do pool do ECHO (cada consumo de lá é definitivo,
+não tem como "devolver"). Removida quando a sessão termina de verdade
+(`sair_musica`).
+
+**Dono da sessão** (`SessaoMusica.iniciado_por`, decisão do usuário
+2026-08-26 resolvendo uma contradição real: Modo Música virou social por
+pessoa, mas ainda precisava de UM dono pros controles de estado) - quem
+chamou `/musica tocar`/`/caos` primeiro nesse servidor. Controles de
+reprodução (`/musica pular/pausar/continuar/parar/dj_automatico`, e o
+botão ⏭️) checam `interaction.user.id == sessao.iniciado_por`
+(`eris/bot.py::_quem_iniciou_pode`) - **adicionar à fila (`/musica tocar
+<busca>`) e like/dislike continuam abertos a qualquer membro**, só o
+controle de ESTADO da sessão é restrito. Sem substituto pra "dono da
+Galateia" (a instância "musica" não carrega `eris.db`/lista de donos,
+papel sem moderação) - se quem iniciou sair e não voltar, ninguém mais
+controla a sessão até ela ser reiniciada; aceito como limitação conhecida.
+
+**`/musica tocar` sem parâmetro toca as aprovadas** (pedido do usuário:
+"o musica tocar, se n passar parametro, começa a tocar as musicas q
+aprovei, ate terminar todas") - `musica.tocar_aprovadas` puxa a lista de
+👍 de quem chamou (`gaia_webhook.pedir_aprovadas_musica`), usa como seed
+fixa da fila lógica (`_modo_aprovadas=True`) e AVISA + PARA ao esgotar, em
+vez de cair pro pool/`/caos` como o modo contínuo normal faz - é uma lista
+fechada, não uma sessão infinita. `/musica aprovadas`/`/musica
+desaprovadas` (novos) listam (até 25) o que cada pessoa já avaliou.
+
+**Feedback passivo (sinal fraco)** - `SessaoMusica._tocar` guarda
+`_inicio_atual` (`time.monotonic()`) e reseta `_pulado_manualmente`;
+`pular()` marca esse flag ANTES de `.stop()` (distingue skip manual de fim
+natural, já que o callback `after` do discord.py dispara igual nos dois
+casos). No início de `_avancar()`, ANTES de qualquer branch/recursão,
+captura e LIMPA `tocando_agora`/`_inicio_atual`/`_pulado_manualmente` da
+faixa que acabou de terminar e manda `gaia_webhook.pedir_feedback_passivo_
+musica` em background (fração tocada = tempo decorrido / `duracao_
+segundos` do yt-dlp) - atribuído a `iniciado_por` (o sinal é sobre a vibe
+da SESSÃO, não dá pra saber quem na call efetivamente ouviu). Achado ao
+revisar: capturar DEPOIS de uma branch que recursa (`await self._avancar()`
+de novo, quando um stream expirado não re-resolve ou uma identidade não
+acha nada no YouTube) mandaria o MESMO evento passivo duplicado - corrigido
+limpando o estado antes de qualquer recursão possível.
+
+## Comportamento conhecido: sessão de música "fantasma" na call após "Reiniciar Ecossistema Completo" (2026-08-27)
+
+Observado pelo usuário: "ela estava em call qnd reiniciei, ela parou a
+musica mas continuou na sala". Investigado no lado da GAIA
+(`scripts/reiniciar_ecossistema.py`) - o restart mata o processo do ERIS
+com `psutil.proc.kill()` (`TerminateProcess`, término ABRUPTO, sem
+handshake). Isso explica os dois sintomas juntos: o ÁUDIO para na hora
+(processo morto, stream cortado), mas a PRESENÇA na call de voz do
+Discord não - `SessaoMusica.sair()`/`self._vc.disconnect()` nunca chegam
+a rodar (nenhum código de limpeza roda num kill duro), então o Discord só
+derruba essa presença de voz quando o PRÓPRIO timeout dele expira
+(minutos, não imediato) - diferente da presença de TEXTO (online/offline),
+que cai rápido via perda de heartbeat do gateway. Confirmado via PID: os 4
+processos do ERIS (completo + música, launcher uv + processo real) trocam
+de PID a cada restart - o kill funciona de verdade, não é processo zumbi.
+Estado da sessão (`_sessoes_musica`, em memória) também se perde no
+restart - o ERIS novo não sabe que "estava" numa call, não reconecta
+sozinho. Aceito como limitação conhecida por ora (mesma natureza do "views
+não são persistidas entre reinícios" já documentado acima) - resolver de
+verdade exigiria um desligamento GRACIOSO do ERIS antes do kill (endpoint
+HTTP pra pedir shutdown limpo, com `sessao.sair()` em todas as sessões
+ativas antes de sair do processo), não implementado ainda.
+
+## Bug real: `/caos` depois de `/musica tocar` (aprovadas) ficava preso no modo errado (2026-08-27)
+
+Usuário reportou: "assim q eu uso o /caos, ele tem de ignorar tudo p tras e
+seguir a logica do /caos, atualmente ele ta repetindo a msg... O caos so ta
+tocando 1 musica". Causa raiz: `iniciar_caos` chama `_obter_ou_criar_
+sessao`, que REAPROVEITA a sessão já ativa se ela existir (em vez de criar
+uma nova) - se essa sessão tinha começado antes por `/musica tocar` sem
+parâmetro (`tocar_aprovadas`, que seta `SessaoMusica._modo_aprovadas =
+True`), `iniciar_caos` nunca resetava essa flag. Duas consequências: (1)
+`_avancar()` continuava tratando a sessão como "lista fechada de
+aprovadas" - ao esvaziar os buffers, sempre caía no branch `if self.
+_modo_aprovadas:` (aviso de esgotado + `return`), nunca no fallback de DJ
+contínuo normal do `/caos`; (2) `_agendar_reabastecimento` pula
+`_repor_fila_logica` inteiro quando `_modo_aprovadas` é True, então a fila
+lógica nunca era reabastecida - por isso só 1 música tocava. Corrigido:
+`iniciar_caos` agora seta `sessao._modo_aprovadas = False` logo depois de
+obter/criar a sessão, antes de pedir a semente pro ECHO.
 
 ## Bug real: dedup de sessão nunca batia, mesma música repetia (2026-08-26)
 
