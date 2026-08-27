@@ -173,7 +173,17 @@ retorno da slash command original. `_ViewControlesMusica` (discord.ui.View,
   histórico na hora se a faixa nunca passou pelo Radar, resolve o gênero
   sozinho, e agora tira a faixa exata do pool - "Musicas sem voto não saem
   do pool" no ECHO). Resposta ephemeral, não interrompe a reprodução.
-  Aberto a QUALQUER membro (alimenta só o perfil de quem clicou).
+  Aberto a QUALQUER membro (alimenta só o perfil de quem clicou). 🔥 Um 👎
+  também chama `SessaoMusica.remover_artista_da_fila_logica` (2026-08-27,
+  achado pelo usuário: "deveria ir tirando as votadas da lista das 50 e
+  completar com novas") - requisito do plano original ("feedback negativo
+  reorganiza músicas ainda não preparadas, streams já resolvidos
+  permanecem") nunca tinha sido conectado no código final; o ECHO já
+  invalidava o artista inteiro no POOL DELE, mas isso nunca alcançava
+  candidatos JÁ PUXADOS pro buffer local do ERIS antes do dislike. Remove
+  da fila LÓGICA (camada 2) tudo do mesmo artista e dispara
+  reabastecimento na hora (não espera cair abaixo do mínimo de 20);
+  streams JÁ resolvidos (camada 3) continuam intactos.
 - ▶️ (pedido do usuário: "Adicionar botão de play, para caso queira voltar
   em alguma musica que tocou") - `adicionar_por_identidade` reusa a mesma
   busca/enfileiramento de `/musica tocar`, a partir do artista/título JÁ

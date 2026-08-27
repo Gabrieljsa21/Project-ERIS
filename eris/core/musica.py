@@ -214,6 +214,18 @@ class _ViewControlesMusica(discord.ui.View):
     async def _feedback(self, interaction, valor, resposta):
         await interaction.response.defer(ephemeral=True)
         await asyncio.to_thread(gaia_webhook.pedir_feedback_musica, interaction.user.id, self._artista, self._titulo, valor)
+        # 🔥 👎 também limpa a fila LÓGICA local (2026-08-27, achado pelo
+        # usuário: "deveria ir tirando as votadas da lista das 50 e
+        # completar com novas") - o ECHO já invalida o artista inteiro no
+        # POOL dele (`pool.invalidar_relacionados`), mas isso nunca
+        # alcançava candidatos JÁ PUXADOS pro buffer local do ERIS antes
+        # do dislike (requisito do plano original, nunca conectado no
+        # código final). Só a camada 2 (sem stream ainda) - streams JÁ
+        # resolvidos na camada 3 continuam, pra não desperdiçar trabalho.
+        if valor == "negativo":
+            sessao = _sessoes_musica.get(self._guild_id)
+            if sessao is not None:
+                sessao.remover_artista_da_fila_logica(self._artista)
         await interaction.followup.send(resposta, ephemeral=True)
 
     async def _somente_iniciador(self, interaction):
@@ -562,6 +574,23 @@ class SessaoMusica:
             asyncio.create_task(self._repor_fila_logica())
         if len(self.fila) < _STREAMS_MINIMO and self.fila_logica:
             asyncio.create_task(self._resolver_streams())
+
+    def remover_artista_da_fila_logica(self, artista):
+        """👎 forte (2026-08-27, achado pelo usuário: "deveria ir tirando as
+        votadas da lista das 50 e completar com novas") - remove da fila
+        LÓGICA (camada 2, ainda sem stream) tudo do mesmo artista e dispara
+        reabastecimento na hora (não espera cair abaixo do mínimo de 20 -
+        "completar com novas" é imediato, não só eventual). Streams JÁ
+        resolvidos (camada 3) não são tocados - preserva trabalho de
+        resolução do YouTube já feito, mesmo raciocínio de sempre."""
+        artista_normalizado = artista.strip().lower()
+        tamanho_antes = len(self.fila_logica)
+        self.fila_logica = [f for f in self.fila_logica if f["artista"].strip().lower() != artista_normalizado]
+        if len(self.fila_logica) == tamanho_antes:
+            return  # nada desse artista esperando na fila lógica - nada a fazer
+        _salvar_fila_logica_persistida(self.guild_id, self.fila_logica)
+        if not self._modo_aprovadas:
+            asyncio.create_task(self._repor_fila_logica())
 
     async def _tocar_ou_enfileirar(self, faixa):
         """Toca IMEDIATAMENTE se nada estiver tocando/na fila, senão
