@@ -323,16 +323,36 @@ def _registrar_slash_voz(tree):
     tree.add_command(grupo_tutora)
 
 
+def _quem_iniciou_pode(interaction):
+    """Controles de reprodução (pular/pausar/continuar/parar/dj_automatico)
+    restritos a quem INICIOU a sessão (decisão do usuário 2026-08-26,
+    resolvendo a contradição real com "aberto a qualquer membro" - Modo
+    Música virou social por pessoa, então o CONTROLE de estado precisa de
+    dono, mas adicionar/avaliar continua livre). Sem sessão ativa, deixa
+    passar (`musica.pular` etc. já respondem "não tava tocando" sozinhos)."""
+    iniciador = musica.obter_iniciador(interaction.guild.id)
+    return iniciador is None or str(interaction.user.id) == iniciador
+
+
+async def _responder_negado_por_dono_da_sessao(interaction):
+    await interaction.response.send_message(
+        "Só quem iniciou a sessão de música pode fazer isso - \"/musica tocar\" pra adicionar e 👍/👎 continuam liberados.",
+        ephemeral=True,
+    )
+
+
 def _registrar_slash_musica(tree):
     """Modo Música - substitui o Jockie Music (pedido do usuário 2026-08-25).
     Diferente do Conversa/Intérprete/Tutora, aberto a QUALQUER membro do
     servidor (não só dono) - é uma feature social compartilhada, mesmo
     espírito de uso que o Jockie já tinha (qualquer um na call podia pedir
-    música)."""
+    música). 🔥 2026-08-26: controles de ESTADO (pular/pausar/continuar/
+    parar/dj_automatico) passaram a exigir ser quem iniciou a sessão -
+    adicionar à fila e like/dislike continuam abertos a todo mundo."""
     grupo_musica = app_commands.Group(name="musica", description="Toca música na call de voz (busca no YouTube)")
 
-    @grupo_musica.command(name="tocar", description="Toca (ou adiciona à fila) uma música - nome, artista ou link")
-    async def _musica_tocar(interaction: discord.Interaction, busca: str):
+    @grupo_musica.command(name="tocar", description="Toca (ou adiciona à fila) uma música - vazio toca suas aprovadas")
+    async def _musica_tocar(interaction: discord.Interaction, busca: str = None):
         if interaction.guild is None:
             await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
             return
@@ -340,34 +360,53 @@ def _registrar_slash_musica(tree):
         if canal is None:
             await interaction.response.send_message("Você precisa estar numa call de voz do servidor.", ephemeral=True)
             return
-        # 🔥 Confirmação SEMPRE ephemeral (2026-08-26, achado pelo usuário:
-        # "mandou 2 mensagens... a primeira desnecessaria") - o anúncio
-        # público de verdade ("tocando agora" + botões) já sai à parte via
-        # `_tocar` -> `text_channel.send`; essa aqui é só o "recebi seu
-        # pedido" pra quem chamou o comando, não precisa aparecer pra todo
-        # mundo no canal.
+        # 🔥 Confirmação ephemeral só quando sobra algo pra dizer (2026-08-27,
+        # pedido do usuário: "essa resposta privada pode ser removida" - o
+        # anúncio público de verdade ("tocando agora" + botões) já confirma
+        # sozinho via `_tocar` -> `text_channel.send`; play IMEDIATO devolve
+        # `mensagem=None` e a resposta adiada é apagada em vez de mandar um
+        # followup vazio). "Adicionado à fila" continua tendo followup - só
+        # ela sabe informar a posição.
         await interaction.response.defer(ephemeral=True)
-        ok, mensagem = await musica.tocar(canal, interaction.channel, busca)
+        if busca:
+            ok, mensagem = await musica.tocar(canal, interaction.channel, busca, interaction.user.id)
+        else:
+            # 🔥 Sem parâmetro (2026-08-26, pedido do usuário: "o musica
+            # tocar, se n passar parametro, começa a tocar as musicas q
+            # aprovei, ate terminar todas").
+            ok, mensagem = await musica.tocar_aprovadas(canal, interaction.channel, interaction.user.id)
+        if mensagem is None:
+            await interaction.delete_original_response()
+            return
         await interaction.followup.send(mensagem, ephemeral=True)
 
-    @grupo_musica.command(name="pular", description="Pula pra próxima música da fila")
+    @grupo_musica.command(name="pular", description="Pula pra próxima música da fila (só quem iniciou a sessão)")
     async def _musica_pular(interaction: discord.Interaction):
         if interaction.guild is None:
             await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
             return
+        if not _quem_iniciou_pode(interaction):
+            await _responder_negado_por_dono_da_sessao(interaction)
+            return
         await interaction.response.send_message(musica.pular(interaction.guild.id))
 
-    @grupo_musica.command(name="pausar", description="Pausa a música atual")
+    @grupo_musica.command(name="pausar", description="Pausa a música atual (só quem iniciou a sessão)")
     async def _musica_pausar(interaction: discord.Interaction):
         if interaction.guild is None:
             await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
             return
+        if not _quem_iniciou_pode(interaction):
+            await _responder_negado_por_dono_da_sessao(interaction)
+            return
         await interaction.response.send_message(musica.pausar(interaction.guild.id))
 
-    @grupo_musica.command(name="continuar", description="Retoma a música pausada")
+    @grupo_musica.command(name="continuar", description="Retoma a música pausada (só quem iniciou a sessão)")
     async def _musica_continuar(interaction: discord.Interaction):
         if interaction.guild is None:
             await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
+            return
+        if not _quem_iniciou_pode(interaction):
+            await _responder_negado_por_dono_da_sessao(interaction)
             return
         await interaction.response.send_message(musica.retomar(interaction.guild.id))
 
@@ -380,29 +419,45 @@ def _registrar_slash_musica(tree):
         if estado is None:
             await interaction.response.send_message("Não tô tocando nada nesse servidor agora.", ephemeral=True)
             return
-        linhas = []
-        if estado["tocando_agora"]:
-            f = estado["tocando_agora"]
-            linhas.append(f"🎵 Tocando agora: **{f['titulo']}** - {f['artista']}")
-        else:
-            linhas.append("Nada tocando agora.")
-        if estado["fila"]:
-            linhas.append("\n**Fila:**")
-            linhas.extend(f"{i}. {f['titulo']} - {f['artista']}" for i, f in enumerate(estado["fila"], 1))
-        linhas.append(f"\nModo contínuo (DJ automático): {'ligado' if estado['modo_continuo'] else 'desligado'}")
-        await interaction.response.send_message("\n".join(linhas))
+        await interaction.response.send_message(musica.formatar_estado_fila(estado))
 
-    @grupo_musica.command(name="parar", description="Para a música, limpa a fila e sai da call")
+    @grupo_musica.command(name="aprovadas", description="Lista suas músicas aprovadas (👍)")
+    async def _musica_aprovadas(interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        faixas = await musica.listar_aprovadas(interaction.user.id)
+        if not faixas:
+            await interaction.followup.send("Você ainda não aprovou nenhuma música.", ephemeral=True)
+            return
+        linhas = [f"{i}. {f['titulo']} - {f['artista']}" for i, f in enumerate(faixas[:25], 1)]
+        await interaction.followup.send("**Suas músicas aprovadas:**\n" + "\n".join(linhas), ephemeral=True)
+
+    @grupo_musica.command(name="desaprovadas", description="Lista suas músicas desaprovadas (👎)")
+    async def _musica_desaprovadas(interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        faixas = await musica.listar_desaprovadas(interaction.user.id)
+        if not faixas:
+            await interaction.followup.send("Você ainda não desaprovou nenhuma música.", ephemeral=True)
+            return
+        linhas = [f"{i}. {f['titulo']} - {f['artista']}" for i, f in enumerate(faixas[:25], 1)]
+        await interaction.followup.send("**Suas músicas desaprovadas:**\n" + "\n".join(linhas), ephemeral=True)
+
+    @grupo_musica.command(name="parar", description="Para a música, limpa a fila e sai da call (só quem iniciou a sessão)")
     async def _musica_parar(interaction: discord.Interaction):
         if interaction.guild is None:
             await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
             return
+        if not _quem_iniciou_pode(interaction):
+            await _responder_negado_por_dono_da_sessao(interaction)
+            return
         await interaction.response.send_message(await musica.sair_musica(interaction.guild.id))
 
-    @grupo_musica.command(name="dj_automatico", description="Liga/desliga a continuação automática quando a fila acabar")
+    @grupo_musica.command(name="dj_automatico", description="Liga/desliga a continuação automática quando a fila acabar (só quem iniciou a sessão)")
     async def _musica_dj(interaction: discord.Interaction, ativo: bool):
         if interaction.guild is None:
             await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
+            return
+        if not _quem_iniciou_pode(interaction):
+            await _responder_negado_por_dono_da_sessao(interaction)
             return
         await interaction.response.send_message(musica.definir_modo_continuo(interaction.guild.id, ativo))
 
@@ -424,9 +479,13 @@ def _registrar_slash_caos(tree):
         if canal is None:
             await interaction.response.send_message("Você precisa estar numa call de voz do servidor.", ephemeral=True)
             return
-        # 🔥 Confirmação SEMPRE ephemeral - mesmo motivo de `_musica_tocar`.
+        # 🔥 Confirmação ephemeral só quando sobra algo pra dizer - mesmo
+        # motivo de `_musica_tocar` (2026-08-27).
         await interaction.response.defer(ephemeral=True)
-        ok, mensagem = await musica.iniciar_caos(canal, interaction.channel)
+        ok, mensagem = await musica.iniciar_caos(canal, interaction.channel, interaction.user.id)
+        if mensagem is None:
+            await interaction.delete_original_response()
+            return
         await interaction.followup.send(mensagem, ephemeral=True)
 
     tree.add_command(_caos)

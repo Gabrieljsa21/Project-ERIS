@@ -77,14 +77,24 @@ voz só entra na call, não inicia a sessão.
 ## Modo Música (2026-08-25 - substitui o Jockie Music)
 
 `/musica tocar`, `/musica pular`, `/musica pausar`, `/musica continuar`,
-`/musica fila`, `/musica parar`, `/musica dj_automatico` - toca áudio de
-verdade numa call de voz (busca no YouTube via `yt-dlp`, mesma técnica usada
-por praticamente todo bot de música de Discord - zona cinzenta de ToS
-conhecida). Aberto a qualquer membro do servidor (não só dono - feature
-social, mesmo espírito de uso do Jockie). Quando a fila esvazia com
-"DJ automático" ligado (padrão), o ERIS pede pro [Project ECHO](../../Project-ECHO)
-(via webhook reverso pra GAIA) uma sugestão de próxima música "na mesma
-vibe" da que acabou de tocar - nunca repete o que já tocou NESTA sessão.
+`/musica fila`, `/musica aprovadas`, `/musica desaprovadas`, `/musica parar`,
+`/musica dj_automatico` - toca áudio de verdade numa call de voz (busca no
+YouTube via `yt-dlp`, mesma técnica usada por praticamente todo bot de
+música de Discord - zona cinzenta de ToS conhecida). `/musica tocar <busca>`
+e like/dislike continuam abertos a qualquer membro do servidor (feature
+social); pular/pausar/continuar/parar/dj_automatico ficam restritos a quem
+INICIOU a sessão (2026-08-26, resolvendo a fronteira entre "social" e
+"precisa de um dono"). `/musica tocar` SEM busca toca a lista de aprovadas
+de quem chamou até esgotar. Quando a fila esvazia com "DJ automático"
+ligado (padrão), o ERIS pede pro [Project ECHO](../../Project-ECHO) (via
+webhook reverso pra GAIA) uma sugestão de próxima música "na mesma vibe" da
+que acabou de tocar - nunca repete o que já tocou NESTA sessão, nem o que
+já foi apresentado ALGUMA vez pra essa pessoa (pool do ECHO).
+
+🔥 **Buffer em 3 camadas (2026-08-26)** - mantém sempre 20-50 identidades já
+reservadas do pool do ECHO e 5-10 streams JÁ resolvidos no YouTube,
+reabastecidos em background - a troca de música não espera rede nenhuma no
+caminho normal. Ver "Buffer em 3 camadas" em `ARQUITETURA.md`.
 
 **`/caos` (2026-08-26)** - mesma call, sem pedir NADA antes: entra sozinha
 e já toca algo baseado só no seu perfil/histórico musical (pede pro ECHO
@@ -92,10 +102,16 @@ uma sugestão de partida sem faixa/artista/gênero de semente), depois
 continua na mesma vibe automaticamente igual o DJ automático de sempre.
 Funciona mesmo com perfil totalmente vazio (cai pro que está em alta).
 
-Toda mensagem de "🎵 Tocando agora" (play manual ou continuação automática)
-vem com botões **👍 like** / **👎 dislike** / **⏭️ pular** - like/dislike
-ajustam o perfil musical no ECHO (peso de gênero, incremental), pular
-avança a fila igual `/musica pular`.
+Toda mensagem de "🎵 Tocando agora" vem com botões **⏯️ pausar/retomar** /
+**⏭️ pular** / **👍 like** / **👎 dislike** / **▶️ tocar de novo** /
+**📋 fila** (nessa ordem). ⏯️/⏭️ são restritos a quem iniciou a sessão
+(controle de reprodução); like/dislike/▶️/📋 são abertos a qualquer membro
+(like/dislike ajustam o perfil musical de QUEM CLICOU no ECHO - peso de
+gênero, incremental, cada pessoa tem o próprio). ▶️ reenfileira a MESMA
+faixa dessa mensagem - útil pra voltar numa música de antes na sessão,
+basta rolar até a mensagem dela no canal. A linha do anúncio mostra
+"(👍)"/"(👎)" quando a faixa já foi avaliada antes por quem iniciou a
+sessão.
 
 Mutuamente exclusivo com Conversa/Intérprete/Tutora DENTRO de uma mesma
 instância (Discord só permite 1 conexão de voz por conta de bot por

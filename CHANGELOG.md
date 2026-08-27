@@ -85,8 +85,54 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
   passou pelo Radar); pular reusa `musica.pular()` de sempre. Validado ao
   vivo: rota do ECHO testada com dados reais, bot reconectado sem erro
   com o código novo.
+- **Buffer em 3 camadas + dono da sessão + feedback passivo (2026-08-26)** -
+  redesenho completo do Modo Música pra eliminar espera perceptível entre
+  músicas, junto com a reescrita por pessoa do lado do
+  [Project ECHO](../../Project-ECHO). `SessaoMusica` ganhou `fila_logica`
+  (20-50, identidade sem stream, puxada do pool do ECHO em background) e
+  mantém `fila` (5-10, streams JÁ resolvidos) sempre cheia - `_avancar()`
+  só consome o topo pronto, nenhuma rede no meio. Fila lógica persistida
+  (`data/fila_sessao_<guild_id>.json`) sobrevive a um restart do ERIS.
+  `SessaoMusica.iniciado_por` restringe pular/pausar/continuar/parar/
+  dj_automatico a quem começou a sessão (adicionar à fila e like/dislike
+  continuam livres). `/musica tocar` sem parâmetro toca a lista de
+  aprovadas de quem chamou até esgotar (`tocar_aprovadas`, pedido do
+  usuário); `/musica aprovadas`/`/musica desaprovadas` (novos) listam o
+  que cada pessoa já avaliou. Tempo de escuta (fração tocada, se foi
+  pulada) medido e mandado pro ECHO como sinal fraco/acumulativo. Ver
+  "Buffer em 3 camadas" em `ARQUITETURA.md`.
+- **Botão ▶️ pra voltar numa música que já tocou (2026-08-26, pedido do
+  usuário: "Adicionar botão de play, para caso queira voltar em alguma
+  musica que tocou")** - toda mensagem antiga de "tocando agora" continua
+  no canal com seus próprios botões válidos (`timeout=None`) - basta rolar
+  até ela e clicar em ▶️ pra reenfileirar a MESMA faixa, sem precisar
+  digitar o nome de novo. Aberto a qualquer membro, mesmo espírito de
+  adicionar à fila.
+- **Redesenho dos controles da mensagem de "tocando agora" (2026-08-27)** -
+  botão ⏯️ novo (pausar/retomar num só clique, restrito a quem iniciou a
+  sessão) e botão 📋 novo (mostra a fila, mesmo texto de `/musica fila`).
+  Ordem final: ⏯️/⏭️/👍/👎/▶️/📋 (pedido do usuário). A confirmação privada
+  "🎵 Tocando." foi removida quando toca IMEDIATAMENTE - o card público já
+  confirma sozinho; "Adicionado à fila" continua respondendo (só ela tem
+  informação nova, a posição). A linha do anúncio agora também mostra
+  "(👍)"/"(👎)" quando a faixa já foi avaliada antes por quem iniciou a
+  sessão - avaliamos trocar 👍/👎 por reações nativas do Discord, mas a
+  API não permite marcar uma reação como "já votada" numa mensagem NOVA
+  (reação é sempre por mensagem), então ficou como botão + texto em vez
+  de simular visualmente algo que o Discord não suporta.
+- **Título linkado no anúncio (2026-08-27, pedido do usuário)** - "Tocando
+  agora" agora aponta pro vídeo do YouTube tocado (título vira link
+  markdown).
 
 ### Correções
+- **`/caos` depois de `/musica tocar` (aprovadas) ficava preso no modo
+  errado (2026-08-27)** - reportado pelo usuário: "assim q eu uso o /caos,
+  ele tem de ignorar tudo p tras e seguir a logica do /caos... O caos so
+  ta tocando 1 musica". `iniciar_caos` reaproveitava a sessão ativa sem
+  resetar `_modo_aprovadas`, então continuava tratando `/caos` como se
+  ainda fosse a lista fechada de aprovadas (parava e repetia o aviso de
+  esgotado, nunca reabastecia a fila lógica). Corrigido resetando a flag
+  no início de `iniciar_caos`.
 - **Intérprete/Tutora entravam na call mas não ouviam nem falavam nada** - achado pelo usuário na prática ("Quando eu peço ela p entrar na call, ela entra mas n conversa comigo"). Causa raiz: discord.py embute o DLL do libopus no pacote, mas NÃO carrega ele automaticamente no import (só versões bem antigas da lib faziam isso) - sem `discord.opus.load_opus`/`_load_default()`, a conexão de voz em si funciona (não depende de opus), mas a decodificação do áudio recebido (`discord-ext-voice-recv`) e o encode do áudio de resposta falham em silêncio, sem nenhum erro visível no Discord. Corrigido chamando `discord.opus._load_default()` no início de `iniciar_bot` (`eris/bot.py`), com aviso no log se falhar.
 - **ERIS não tinha NENHUM log em disco** - achado depurando o bug acima (e de novo depurando por que o Modo Conversa não respondia): rodando via `pythonw.exe` (sem console, como sempre roda em produção), todo `print()` era descartado no vazio - não sobrava nenhum registro do lado do ERIS pra saber SE a call recebeu áudio, SE o webhook pra GAIA foi chamado, ou onde exatamente algo falhou. `eris/main.py::_RedirecionadorLog` (mesmo espírito do `LogRedirector` da GAIA, `ui/qt_painel.py`) agora espelha stdout/stderr pra `logs/AAAA-MM-DD.log`, ativado logo no início de `main()`.
 - **Logs de diagnóstico da captura de voz (2026-08-25)** - mesmo com o log em disco e o libopus carregados, uma tentativa real numa call não gerou NENHUMA linha nova - nem confirmação de recebimento de áudio, nem erro. `eris/core/voz_captura.py`/`voz_call.py` ganharam logs pontuais (throttle de 2s, não por pacote): confirmação de SSRC resolvido pra um usuário, RMS de verdade a cada checagem (`VoiceFilterRMS.calcular_rms`, novo método - antes só devolvia bool), fala fechada (dispatch pra GAIA) ou descartada por curta demais, e aviso 1x se o SSRC nunca resolver pra ninguém. Sem isso, não dava pra saber em qual das 3 camadas (recepção de pacote/resolução de usuário/limiar de volume) o silêncio estava acontecendo.
