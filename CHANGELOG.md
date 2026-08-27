@@ -5,6 +5,8 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-08-24 a 2026-08-27: Extração completa - moderação, voz e Modo Música com buffer em 3 camadas (PRs #1 a #27)
+
 ### Novidades
 - **Repositório criado (extração parcial, 2026-08-24)** - conexão,
   segurança (donos, rate limit, filtro de roteamento), mensagens (DM/canal/
