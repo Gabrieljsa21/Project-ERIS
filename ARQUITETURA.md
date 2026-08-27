@@ -196,6 +196,16 @@ marcar uma reação como "já clicada" por alguém que nunca clicou nela).
 Mantido como botão por ora; o "já avaliada antes" virou texto simples (ver
 "(👍)"/"(👎)" abaixo) em vez de tentar simular visualmente.
 
+**Anúncios viram `discord.Embed` com borda colorida (2026-08-27, pedido do
+usuário: "queria q as mensagens do bot tivessem esse embed ou borda...
+pra ficar facil diferenciar")** - texto solto no canal se misturava com o
+resto da conversa. `COR_EMBED_MUSICA = discord.Color(0x4BADE8)` (mesmo
+azul-claro já usado no resto do ecossistema, `ui/qt_modais/argus.py` da
+GAIA) aplicado tanto no anúncio de "tocando agora" (`title`+`description`,
+View de botões continua funcionando junto do embed) quanto no aviso de
+lista de aprovadas esgotada - as duas mensagens PROATIVAS do canal (não
+respostas ephemeral de comando, essas continuam texto simples).
+
 **Título com link pro vídeo (2026-08-27, pedido do usuário)** - `_titulo_
 com_link` (`eris/core/musica.py`) transforma o título do anúncio num link
 markdown pra `faixa["url_pagina"]` (já vem de `_buscar_no_youtube`, sempre

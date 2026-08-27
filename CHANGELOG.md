@@ -123,6 +123,10 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
 - **Título linkado no anúncio (2026-08-27, pedido do usuário)** - "Tocando
   agora" agora aponta pro vídeo do YouTube tocado (título vira link
   markdown).
+- **Mensagens do bot viram Embed com borda colorida (2026-08-27, pedido do
+  usuário)** - "pra ficar facil diferenciar" das mensagens normais do
+  canal. Aplicado no anúncio de "tocando agora" e no aviso de aprovadas
+  esgotadas.
 
 ### Correções
 - **`/caos` depois de `/musica tocar` (aprovadas) ficava preso no modo

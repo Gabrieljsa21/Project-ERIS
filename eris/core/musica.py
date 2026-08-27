@@ -49,6 +49,13 @@ _sessoes_musica = {}  # guild_id -> SessaoMusica
 
 _HISTORICO_SESSAO_MAX = 50  # não cresce pra sempre numa call que fica ligada o dia todo
 
+# 🔥 Anúncios do Modo Música viram Embed com borda colorida (2026-08-27,
+# pedido do usuário: "queria q as mensagens do bot tivessem esse embed ou
+# borda... pra ficar facil diferenciar" - mensagem de texto solta se
+# confundia com o resto da conversa do canal). Mesmo azul-claro já usado no
+# resto do ecossistema (ver `ui/qt_modais/argus.py` da GAIA, cor "#4bade8").
+COR_EMBED_MUSICA = discord.Color(0x4BADE8)
+
 _FILA_LOGICA_ALVO = 50
 _FILA_LOGICA_MINIMO = 20
 _STREAMS_ALVO = 10
@@ -395,10 +402,13 @@ class SessaoMusica:
         if self.text_channel is not None:
             sufixo_voto = await self._sufixo_voto(faixa)
             view = _ViewControlesMusica(self.guild_id, faixa["artista"], faixa["titulo"])
+            embed = discord.Embed(
+                title="🎵 Tocando agora",
+                description=f"{_titulo_com_link(faixa)} - {faixa['artista']}{sufixo_voto}",
+                color=COR_EMBED_MUSICA,
+            )
             try:
-                await self.text_channel.send(
-                    f"🎵 Tocando agora: {_titulo_com_link(faixa)} - {faixa['artista']}{sufixo_voto}", view=view,
-                )
+                await self.text_channel.send(embed=embed, view=view)
             except Exception as e:
                 print(f" [ERIS] Não consegui anunciar a música no canal: {e}")
 
@@ -472,8 +482,12 @@ class SessaoMusica:
         if self._modo_aprovadas:
             print(" [ERIS] Lista de aprovadas esgotada nesta sessão.")
             if self.text_channel is not None:
+                embed = discord.Embed(
+                    description="🎵 Todas as suas músicas aprovadas já tocaram nesta sessão - use `/caos` pra continuar com novas sugestões.",
+                    color=COR_EMBED_MUSICA,
+                )
                 try:
-                    await self.text_channel.send("🎵 Todas as suas músicas aprovadas já tocaram nesta sessão - use `/caos` pra continuar com novas sugestões.")
+                    await self.text_channel.send(embed=embed)
                 except Exception:
                     pass
             return
