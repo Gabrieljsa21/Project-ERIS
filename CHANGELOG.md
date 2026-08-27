@@ -5,6 +5,9 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
 
 ## [Unreleased]
 
+### Correções
+- **👎 não removia candidatos do mesmo artista já puxados pro buffer local (2026-08-27)** - reportado pelo usuário: "deveria ir tirando as votadas da lista das 50 e completar com novas". O ECHO já invalidava o artista inteiro no pool dele, mas isso nunca alcançava a fila lógica local do ERIS (requisito do plano original, nunca conectado no código final). Corrigido: um 👎 agora remove da fila lógica tudo do mesmo artista e reabastece na hora; streams já resolvidos continuam intactos.
+
 ## [0.1.0] - 2026-08-24 a 2026-08-27: Extração completa - moderação, voz e Modo Música com buffer em 3 camadas (PRs #1 a #27)
 
 ### Novidades
