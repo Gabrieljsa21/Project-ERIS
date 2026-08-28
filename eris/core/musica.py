@@ -286,7 +286,7 @@ class _ViewControlesMusica(discord.ui.View):
     @discord.ui.button(emoji="📋", style=discord.ButtonStyle.secondary)
     async def _mostrar_fila(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
-        estado = obter_fila(self._guild_id)
+        estado = await obter_fila(self._guild_id)
         if estado is None:
             await interaction.followup.send("Não tô tocando nada nesse servidor agora.", ephemeral=True)
             return
@@ -616,10 +616,20 @@ class SessaoMusica:
         self._vc.resume()
         return "Retomei."
 
-    def obter_fila(self):
+    async def obter_fila(self):
+        """Async (2026-08-28, pedido do usuário: "no listar tem q por o
+        voto se tiver, igual tem os (👍) no final de qnd toca") - mesmo
+        sufixo "(👍)"/"(👎)" de `_sufixo_voto` (usado hoje só no anúncio de
+        "tocando agora"), agora também na faixa atual e em cada item da fila
+        aqui listados. `fila_logica` (camada 2, sem stream) fica de fora -
+        só aparece como contagem, nunca lista item a item."""
+        sufixo_tocando = await self._sufixo_voto(self.tocando_agora) if self.tocando_agora else ""
+        sufixos_fila = await asyncio.gather(*(self._sufixo_voto(f) for f in self.fila)) if self.fila else []
         return {
             "tocando_agora": self.tocando_agora,
+            "sufixo_tocando": sufixo_tocando,
             "fila": list(self.fila),
+            "sufixos_fila": list(sufixos_fila),
             "fila_logica_tamanho": len(self.fila_logica),
             "modo_continuo": self.modo_continuo,
         }
@@ -631,12 +641,16 @@ def formatar_estado_fila(estado):
     linhas = []
     if estado["tocando_agora"]:
         f = estado["tocando_agora"]
-        linhas.append(f"🎵 Tocando agora: **{f['titulo']}** - {f['artista']}")
+        linhas.append(f"🎵 Tocando agora: **{f['titulo']}** - {f['artista']}{estado.get('sufixo_tocando', '')}")
     else:
         linhas.append("Nada tocando agora.")
     if estado["fila"]:
         linhas.append("\n**Fila:**")
-        linhas.extend(f"{i}. {f['titulo']} - {f['artista']}" for i, f in enumerate(estado["fila"], 1))
+        sufixos = estado.get("sufixos_fila") or [""] * len(estado["fila"])
+        linhas.extend(
+            f"{i}. {f['titulo']} - {f['artista']}{sufixo}"
+            for i, (f, sufixo) in enumerate(zip(estado["fila"], sufixos), 1)
+        )
     if estado["fila_logica_tamanho"]:
         linhas.append(f"\n(+{estado['fila_logica_tamanho']} já reservadas, resolvendo em background)")
     linhas.append(f"\nModo contínuo (DJ automático): {'ligado' if estado['modo_continuo'] else 'desligado'}")
@@ -789,9 +803,9 @@ def retomar(guild_id):
     return sessao.retomar() if sessao else "Eu não tava tocando música nesse servidor."
 
 
-def obter_fila(guild_id):
+async def obter_fila(guild_id):
     sessao = _sessoes_musica.get(guild_id)
-    return sessao.obter_fila() if sessao else None
+    return await sessao.obter_fila() if sessao else None
 
 
 def definir_modo_continuo(guild_id, ativo):

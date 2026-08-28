@@ -5,6 +5,9 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
 
 ## [Unreleased]
 
+### Adicionado
+- **`/musica fila`/📋 agora mostram "(👍)"/"(👎)" igual o anúncio de "tocando agora" (2026-08-28)** - pedido do usuário: "no listar tem q por o voto se tiver, igual tem os (👍) no final de qnd toca". `obter_fila` virou async pra buscar o voto de cada faixa antes de montar a resposta.
+
 ### Alterado
 - **Um 👎 numa faixa não afeta mais o resto do mesmo artista (2026-08-27)** - implementado E revertido no mesmo dia: primeiro adicionei `SessaoMusica.remover_artista_da_fila_logica` pra limpar candidatos do mesmo artista da fila lógica local num 👎 (espelhando `pool.invalidar_relacionados` do ECHO), depois o usuário apontou que a premissa em si estava errada - "um 👎 em 1 musica n pode condenar todas desse artista. Assim como o like n aprova todas tbm, algumas eu gosto e outras nao". Revertido - voto agora fica estritamente na faixa exata, nunca no artista inteiro (ver changelog do [Project ECHO](../../Project-ECHO)).
 

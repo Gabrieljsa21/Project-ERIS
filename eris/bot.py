@@ -415,11 +415,15 @@ def _registrar_slash_musica(tree):
         if interaction.guild is None:
             await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
             return
-        estado = musica.obter_fila(interaction.guild.id)
+        # 🔥 defer primeiro (2026-08-28) - `obter_fila` agora busca o voto de
+        # cada faixa (rede, uma chamada por item) antes de responder, pode
+        # passar dos 3s que o Discord dá pra resposta imediata.
+        await interaction.response.defer()
+        estado = await musica.obter_fila(interaction.guild.id)
         if estado is None:
-            await interaction.response.send_message("Não tô tocando nada nesse servidor agora.", ephemeral=True)
+            await interaction.followup.send("Não tô tocando nada nesse servidor agora.", ephemeral=True)
             return
-        await interaction.response.send_message(musica.formatar_estado_fila(estado))
+        await interaction.followup.send(musica.formatar_estado_fila(estado))
 
     @grupo_musica.command(name="aprovadas", description="Lista suas músicas aprovadas (👍)")
     async def _musica_aprovadas(interaction: discord.Interaction):
