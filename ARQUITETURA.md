@@ -233,6 +233,18 @@ está tocando agora já foi avaliada antes por quem INICIOU a sessão
 de `self._vc.play()` já ter começado - atrasa só o texto do anúncio, nunca
 o áudio (mesma regra de zero-espera-perceptível de sempre).
 
+**Mesmo sufixo agora também em `/musica fila`/📋 (2026-08-28, pedido do
+usuário: "no listar tem q por o voto se tiver, igual tem os (👍) no final
+de qnd toca")** - `SessaoMusica.obter_fila` virou async e busca o voto da
+faixa atual + de cada item da camada 3 (`fila`, streams já resolvidos,
+`asyncio.gather` pra não serializar as chamadas) antes de montar o estado;
+`formatar_estado_fila` só concatena o sufixo já pronto. Fica de fora só a
+camada 2 (`fila_logica`, sem stream) - continua aparecendo como contagem
+("+N já reservadas"), nunca item a item, então não tem faixa individual pra
+anexar sufixo. `/musica fila` (slash command) passou a `defer()`/
+`followup.send()` em vez de responder direto - a busca de voto por item é
+rede, pode passar dos 3s que o Discord dá pra resposta imediata.
+
 Views não são persistidas entre reinícios do processo (mesma limitação já
 aceita pro resto do estado da sessão, `_sessoes_musica` em memória) -
 botões de uma call anterior ao restart simplesmente param de responder,
