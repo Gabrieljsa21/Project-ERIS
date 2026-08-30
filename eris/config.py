@@ -29,6 +29,16 @@ PORTA_INSTANCIA_UNICA = 8773
 # chame NELA - só ela chamando a GAIA via `gaia_webhook`).
 PORTA_INSTANCIA_UNICA_MUSICA = 8779
 
+# 🔥 Porta de controle remoto do papel "musica" (2026-08-30, pedido do
+# usuário: "falei q era p criar apenas 1 [icone]... o bot de musica ficava
+# caindo direto" - só o papel "completo" mostra ícone de bandeja agora, ver
+# `eris/tray.py`) - "musica" escuta aqui por comandos texto simples
+# (FECHAR/REINICIAR) mandados pelo tray do "completo", já que os 2 continuam
+# processos separados (crash de um não derruba o outro - histórico real de
+# instabilidade do papel música durante a extração do Colecionador pro
+# Project PANDORA).
+PORTA_CONTROLE_MUSICA = 8780
+
 # 🔥 Base do webhook reverso (ERIS -> GAIA) - mesma porta do servidor
 # `integrations/iris_bridge.py` que já atende MOIRAI/HESTIA/IRIS (8766), só
 # com rotas novas (`/eris/mensagem`, `/eris/comando`). Ajustável via .env pra
