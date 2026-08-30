@@ -22,37 +22,28 @@ from eris.config import PASTA_PROJETO
 
 try:
     import pystray
-    from PIL import Image, ImageDraw
+    from PIL import Image
     _TRAY_DISPONIVEL = True
 except ImportError:
     _TRAY_DISPONIVEL = False
 
 TIMEOUT_FECHAMENTO_FORCADO_SEGUNDOS = 5.0
 
-# Dourado (Maçã Dourada da Discórdia, ver README) pro papel "completo" -
-# roxo pro "musica", só pra diferenciar os 2 ícones de relance na bandeja.
-_COR_POR_PAPEL = {
-    "completo": (212, 175, 55, 255),
-    "musica": (155, 89, 182, 255),
-}
+# Ícone oficial do ERIS (a Maçã Dourada da Discórdia, ver README) - mesmo
+# pra ambos os papéis (completo/música, diferenciados só pelo tooltip
+# abaixo), já que os 2 processos são o MESMO projeto/identidade visual, só
+# papéis diferentes dentro dele (2026-08-30, pedido do usuário: "a eris tem
+# o icone dela... cria um icone na bandeja p ambos os bots, e com o icone
+# certo" - troca o círculo gerado em código que veio antes por falta do
+# arquivo real).
+CAMINHO_ICONE = os.path.join(PASTA_PROJETO, "assets", "icone_eris.png")
 
 
-def _gerar_icone(papel):
-    cor = _COR_POR_PAPEL.get(papel, (120, 120, 120, 255))
-    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
-    desenho = ImageDraw.Draw(img)
-    desenho.ellipse((4, 4, 60, 60), fill=cor, outline=(30, 30, 30, 255), width=3)
-    letra = "E"
+def _carregar_icone():
     try:
-        from PIL import ImageFont
-        fonte = ImageFont.load_default(size=34)
+        return Image.open(CAMINHO_ICONE)
     except Exception:
-        fonte = None
-    caixa = desenho.textbbox((0, 0), letra, font=fonte) if fonte else (0, 0, 20, 26)
-    largura_letra, altura_letra = caixa[2] - caixa[0], caixa[3] - caixa[1]
-    posicao = ((64 - largura_letra) / 2 - caixa[0], (64 - altura_letra) / 2 - caixa[1])
-    desenho.text(posicao, letra, fill=(30, 30, 30, 255), font=fonte)
-    return img
+        return Image.new("RGBA", (64, 64), (212, 175, 55, 255))
 
 
 def _abrir_logs():
@@ -107,7 +98,7 @@ def iniciar_tray(papel):
             pystray.MenuItem("Reiniciar", lambda icon, item: _reiniciar_processo(icon, papel)),
             pystray.MenuItem("Fechar", lambda icon, item: _fechar_processo(icon)),
         )
-        icon = pystray.Icon(f"eris_{papel}", _gerar_icone(papel), f"ERIS ({rotulo})", menu)
+        icon = pystray.Icon(f"eris_{papel}", _carregar_icone(), f"ERIS ({rotulo})", menu)
         icon.run()
 
     threading.Thread(target=_rodar, daemon=True, name=f"tray-eris-{papel}").start()
