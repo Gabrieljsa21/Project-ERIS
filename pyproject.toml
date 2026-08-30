@@ -12,7 +12,19 @@ dependencies = [
     "requests>=2.31",
     "python-dotenv",
     "yt-dlp",
+    "pandora",
 ]
+
+# 🔥 `pandora` (2026-08-29) - Colecionador (gacha estilo Mudae) EXTRAÍDO pra
+# `../Project-PANDORA` (biblioteca Python local, não satélite HTTP - decisão
+# explícita: todo clique de roll/claim/troca cai no orçamento de 3s do
+# Discord, um satélite HTTP colocaria uma chamada de rede em cima de CADA
+# clique, risco real de regredir os 2 bugs de timeout já corrigidos no
+# Colecionador antes da extração). Dependência de PATH local (`tool.uv.
+# sources` abaixo, editável) - não publicada no PyPI, só existe nesta
+# máquina/ecossistema.
+[tool.uv.sources]
+pandora = { path = "../Project-PANDORA", editable = true }
 # 🔥 yt-dlp (2026-08-25, Modo Música - substitui o Jockie Music, pedido do
 # usuário) - busca/extração de áudio streamável do YouTube pra tocar na call
 # (eris/core/musica.py). Não usa cookie/login por padrão (client "android" do

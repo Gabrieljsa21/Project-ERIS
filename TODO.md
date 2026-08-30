@@ -4,7 +4,38 @@ Mesma regra da GAIA (`Project G.A.I.A/assistant/docs/TODO.md`): item
 concluído sai daqui e vira `CHANGELOG.md`/`ARQUITETURA.md`, nunca fica
 marcado como ✅ neste arquivo.
 
+### Validar ao vivo que só 1 bot responde ao claim por emoji (2026-08-30)
+
+**Prioridade:** Alta | **Complexidade:** Baixa
+
+Corrigido (`on_raw_reaction_add` só registra dentro de `if completo:`,
+ver `CHANGELOG.md`/`ARQUITETURA.md`) e reiniciado, mas o bug em si só é
+observável com uma reação de verdade no Discord (comportamento de
+entrega de evento do Gateway, não dá pra simular localmente) - testar
+reagindo com o emoji de claim num card e confirmar que só o bot
+"completo" responde, nunca o "música" também.
+
 ## Pendências conhecidas (da extração de 2026-08-24)
+
+### `MODELO_JUIZ` da GAIA está descomissionado pela Groq (achado 2026-08-29)
+
+**Prioridade:** Média | **Complexidade:** Baixa (mas repo da GAIA, não este)
+
+Testando o webhook novo de classificação de personagens do Colecionador
+(`POST /eris/colecao_classificar`), toda chamada devolvia 404 - a causa era
+`MODELO_JUIZ`/`MODELO_GROQ_BARATO_PADRAO` (`Project G.A.I.A/assistant/
+brain_store.py`), hoje `"llama-3.1-8b-instant"`, ter sido descomissionado
+pela Groq (confirmado via `client.models.list()` - não está mais no
+catálogo). Isso também quebra silenciosamente o juiz do Modo em Grupo da
+GAIA (`core.agent.turno.decidir_quem_fala`, mesma constante) - toda decisão
+de "quem responde" nesse modo cai no `except`/lista vazia sem avisar
+ninguém. `classificar_personagem_colecao` (a função nova) contornou isso
+usando um modelo PRÓPRIO (`openai/gpt-oss-20b`), sem tocar em `MODELO_JUIZ`
+- trocar essa constante compartilhada afeta a cadeia de fallback da
+conversa principal também, risco desnecessário pra corrigir aqui. Precisa
+de alguém decidir o modelo de substituição (mesma família `gpt-oss`/`qwen3`
+já usada em outros lugares) e atualizar `brain_store.py` + adicionar
+`reasoning_format="hidden"` onde faltar.
 
 ### Mascarar segredos no log (`scrubber_segredos.py` da GAIA nunca foi portado)
 
@@ -32,6 +63,16 @@ conversa por DM de ponta a ponta, um comando de moderação de cada grupo
 (`/moderacao`, `/mensagem`, `/canal`, `/cargo`), uma exportação de canal
 (`/exportar`), e o mesmo teste de voz pro Intérprete/Tutora especificamente
 (só o Modo Conversa foi validado até agora).
+
+### Colecionador de Personagens - EXTRAÍDO pro Project PANDORA (2026-08-29)
+
+Todo o Colecionador (`/waifu`, Prova de Soulmate, Torre/Cidade do
+LegendsAwaken ainda não implementadas, etc.) foi extraído pro
+[Project PANDORA](../Project-PANDORA) - ver "Colecionador de Personagens"
+em `ARQUITETURA.md` pro registro histórico de como foi desenhado, e o
+`TODO.md`/`ARQUITETURA.md` do PANDORA pras pendências atuais (validar
+cada botão ao vivo depois do cutover, Torre/Cidade, etc.). Nada disso
+continua pendente AQUI.
 
 ### Voz na call - histórico do bloqueio DAVE e correção (RESOLVIDO em 2026-08-25)
 
@@ -199,10 +240,15 @@ depender da GAIA pra nada.
 - **Canais de voz temporários** (TempVoice) - usuário cria um canal sob
   demanda, controla (renomear/limitar/expulsar) o próprio canal, deletado
   quando esvazia.
-- **Colecionável/gacha** (Mudae) - sortear item/personagem, coleção,
-  troca, cooldown.
+- ~~**Colecionável/gacha** (Mudae) - sortear item/personagem, coleção,
+  troca, cooldown.~~ **Implementado (WiShards/loja/merge/trocas/Party/
+  Vitrine/Favoritas/categoria de combate/Prova de Soulmate) e depois
+  EXTRAÍDO pro [Project PANDORA](../Project-PANDORA) em 2026-08-29** -
+  pendências/roadmap desse domínio (upgrades sem número concreto, Torre,
+  Steal, conquistas, completismo/rankings, eventos, `/wg`/`/hg`/`/mg`)
+  ficam registradas no `TODO.md` do PANDORA, não mais aqui.
 
-Nenhum desses tem escopo definido ainda - só registrado pra não perder a
-ideia, mesmo espírito de "Atlas"/"ECHO" no `TODO.md` da GAIA. Quando
-qualquer um for implementado, ganha tabela própria no `eris.db` (nunca uma
-tabela genérica "kv" pra tudo, ver `eris/db.py`).
+Nenhum dos outros itens abaixo tem escopo definido ainda - só registrado pra
+não perder a ideia, mesmo espírito de "Atlas"/"ECHO" no `TODO.md` da GAIA.
+Quando qualquer um for implementado, ganha tabela própria no `eris.db`
+(nunca uma tabela genérica "kv" pra tudo, ver `eris/db.py`).

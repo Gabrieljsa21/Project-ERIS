@@ -1,16 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Persistência do ERIS via SQLite (`sqlite3` da stdlib, sem dependência nova) -
-escolha deliberada em vez do JSON solto que MOIRAI/HESTIA usam: aqueles têm
-dado de baixa cardinalidade (uma lista de animes/jogos rastreados); o ERIS já
-nasce pensando em domínios futuros de alta cardinalidade por usuário/servidor
-(economia, níveis, canais temporários, colecionáveis - ver TODO.md,
-"Roadmap futuro") onde escrita concorrente e consulta tipo "top 10" tornam
-JSON solto inadequado desde já. Trocar depois seria retrabalho evitável.
+"""Persistência do NÚCLEO do ERIS via SQLite (`sqlite3` da stdlib, sem
+dependência nova) - donos, roteamento (quem recebe resposta de persona),
+cache de servidores e auditoria de moderação.
 
-Hoje só guarda o que a v1 usa de verdade: donos, configuração de roteamento
-(quem recebe resposta de persona), cache de servidores e auditoria de
-moderação - schemas novos (economia etc.) entram como tabelas próprias
-quando a feature for implementada, nunca uma tabela genérica "kv" pra tudo."""
+🔥 O Colecionador (14 tabelas `colecao_*`) foi EXTRAÍDO pro Project-PANDORA
+em 2026-08-29 (biblioteca Python local, `pandora.db` - banco PRÓPRIO,
+`data/pandora.db`, não mais `data/eris.db`) - ver "Extraído pro Project
+PANDORA" em `ARQUITETURA.md`. Esse era o motivo original da escolha de
+SQLite aqui (mencionado no commit original: "domínios futuros de alta
+cardinalidade... colecionáveis") - hoje esse domínio já cresceu e saiu
+daqui, mas SQLite continua sendo a escolha certa pro núcleo (donos/
+roteamento/auditoria também têm formato relacional, não кv solto)."""
 import os
 import sqlite3
 from contextlib import contextmanager
@@ -216,3 +216,4 @@ def listar_auditoria(limite=50):
             (limite,),
         ).fetchall()
         return [dict(r) for r in linhas]
+
