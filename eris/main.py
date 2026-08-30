@@ -38,6 +38,7 @@ load_dotenv(os.path.join(PASTA_PROJETO, _ARQUIVO_ENV), override=True)
 from eris import bot, db  # noqa: E402
 from eris.api_bridge import iniciar_servidor_api  # noqa: E402
 from eris.config import PORTA_INSTANCIA_UNICA, PORTA_INSTANCIA_UNICA_MUSICA  # noqa: E402
+from eris.tray import iniciar_tray  # noqa: E402
 
 _socket_instancia_unica = None
 
@@ -179,6 +180,12 @@ def main():
         # "completo") - a GAIA nunca chama DENTRO dessa instância, só ela
         # chamando a GAIA (`gaia_webhook.pedir_proxima_musica`).
         print(" [SISTEMA] ERIS (papel música) pronto - conectando ao Discord...")
+
+    # 🔥 Ícone de bandeja (2026-08-30) - o ERIS roda em produção via
+    # pythonw.exe (sem console, ver iniciar_eris.bat/iniciar_eris_oculto.vbs),
+    # então isso é o único jeito de ver que o processo tá de pé e de
+    # reiniciar/fechar sem precisar matar via Gerenciador de Tarefas.
+    iniciar_tray(PAPEL)
 
     asyncio.run(bot.iniciar_bot(token, papel=PAPEL))
 

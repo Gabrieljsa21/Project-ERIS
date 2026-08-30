@@ -44,6 +44,15 @@ bootstrap da 1ª execução (a lista real, com nome + toggle por conta, é
 editada depois no Painel da GAIA ou nas rotas HTTP - persiste em
 `data/eris.db`, SQLite).
 
+**Em produção (2026-08-30), sem terminal aberto**: rode
+`iniciar_eris_oculto.vbs` (ou aponte um atalho da área de trabalho pra ele) -
+sobe as 2 instâncias (completo + música) escondidas via `pythonw.exe`, sem
+janela de console nenhuma. Controle pelo ícone de cada instância na bandeja
+do sistema (Ver logs/Reiniciar/Fechar) - ver `eris/tray.py`.
+`encerrar_eris.ps1` encerra as 2 de emergência, se a bandeja não estiver
+acessível. Ver "Bandeja do sistema + inicialização escondida" em
+`ARQUITETURA.md`.
+
 Diferente do HESTIA (sem loop próprio): o ERIS tem vida própria de verdade -
 a conexão com o Discord fica de pé mesmo com a GAIA fechada, respondendo
 moderação/exportação. Só a conversa (que depende de conteúdo) fica
