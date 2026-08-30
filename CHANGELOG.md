@@ -5,11 +5,232 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
 
 ## [Unreleased]
 
+### Removido
+- **Colecionador de Personagens EXTRAÍDO pro [Project PANDORA](../Project-PANDORA) (2026-08-29)** - `eris/colecao/*` (~2.780 linhas: `gacha.py`/`paineis.py`/`consulta.py`/`economia.py`/`auto_colecionador.py`/`sincronizador.py`/`importar_get_waifu.py`) e as 14 tabelas `colecao_*` de `eris/db.py` (de 1.773 pra 219 linhas) foram removidos - o Colecionador já era a MAIORIA do peso do ERIS, e o usuário perguntou se valia separar num projeto próprio. Diferente do padrão de satélite HTTP (MOIRAI/ECHO) - REJEITADO de propósito, já que todo clique de roll/claim/troca cai no orçamento de 3s do Discord (2 bugs reais de timeout corrigidos nesta mesma sessão) - o PANDORA é uma BIBLIOTECA Python local (dependência de path via `uv`, `[tool.uv.sources]`), importada direto pelo `eris/bot.py`, zero round-trip de rede. Banco de dado migrado (`data/eris.db` -> `Project-PANDORA/data/pandora.db`, script `migrar_de_eris.py`, 30.965 personagens + todo o resto sem perda). Comandos/painéis (`/waifu`, `/colecao_admin`, etc.) continuam funcionando EXATAMENTE igual do ponto de vista de quem usa o Discord - só o código por trás mudou de repositório. Ver "Extraído pro Project PANDORA" em `ARQUITETURA.md`.
+
+### Corrigido
+- **Claim por emoji fazia AMBAS as instâncias (completo + música) responderem (2026-08-30, achado do usuário: "Qnd coleto algum personagem pelo emoji, ambas os bots respondem, tinha q ser so 1")** - `on_raw_reaction_add` era registrado SEM condição de papel, com um comentário que assumia (errado) que "cada processo só recebe evento das próprias mensagens" - o Discord na verdade entrega esse evento pra QUALQUER bot conectado ao canal, reagindo em QUALQUER mensagem dele. Como as 2 instâncias ficam no MESMO servidor/banco, as duas processavam o MESMO claim - `db.reivindicar` atômico garantia só uma vencer a corrida, mas a instância "música" (que nem deveria participar de Colecionador) ainda respondia com erro/duplicado mesmo perdendo. Corrigido registrando o handler só dentro do `if completo:`, mesmo padrão de `on_guild_join`/`on_guild_remove`.
+- **Respostas de música sempre no canal configurado, nunca no de onde o comando foi digitado (2026-08-30, pedido do usuário: "quero q tudo relacionado a musica so seja respondido no canal de musica definido, independente se mandar o comando em outro canal")** - a restrição antiga (`_no_canal_certo_de_musica`) só BLOQUEAVA comandos fora de 1 canal configurável; removida e substituída por `_canal_anuncio_musica`/`_responder_no_canal_de_musica` - agora `/musica <ação>`/`/caos` funcionam de QUALQUER canal, mas a resposta pública (Tocando/pular/pausar/continuar/parar/dj_automatico/fila) sempre sai no canal configurado via `/musica canal` - a interação em si vira um ack ephemeral silencioso quando precisa redirecionar (não dá pra fazer uma resposta de interação aparecer num canal diferente de onde ela nasceu). `_obter_ou_criar_sessao` também passou a atualizar `sessao.text_channel` toda vez que um comando roda numa sessão já ativa (antes só gravava na criação, então uma sessão antiga continuava anunciando pro canal de quando começou). Mesmo fix aplicado ao Colecionador (Project-PANDORA, ver `ARQUITETURA.md` de lá).
+- **`/colecao_admin dar_personagem` não classificava a personagem (2026-08-29, achado do usuário: "qnd vc da personagem p alguem, n faz os esquemas de por classe... Tem de seguir o msm fluxo de coletar")** - a versão original vivia em `db.py` e só fazia claim+WiShards+Afinidade, sem chamar `revelar_classe` (pede a classe/categoria de combate pra GAIA). Movida pra `gacha.atribuir_personagem_admin` (async, mesmo módulo de `_processar_claim`) - agora reaproveita o MESMO fluxo do claim normal (economia + revelação de classe + embed de confirmação), com uma única diferença de propósito: NÃO desconta o claim de quem recebe (usuário: "soq sem descontar claim" - é presente do admin, não devia gastar a cota normal de ninguém). Comando ganhou `defer()` antes de chamar (mesmo cuidado do bug de timeout - `revelar_classe` pede a GAIA por HTTP, ~1-2s).
+- **`/colecao_disponiveis` não batia com o pedido original (2026-08-29, usuário: "esse comando é p listar apenas os personagens n coletados e rolados na ultima hora, e trazer ordenado por popularidade... e eu pedi p retornar apenas os 10 melhores")** - a versão anterior ordenava por RARIDADE e listava TODOS os pendentes (até ~150 com 3 pessoas rolando 50/hora cada), com botão só nos 10 primeiros - descasado do pedido e é a mesma causa do estouro de 2000 caracteres corrigido antes. `gacha.personagens_pendentes` ganhou `limite` (opcional) e passou a ordenar por POPULARIDADE DESC; `/colecao_disponiveis` chama com `limite=10` - agora corta na FONTE, nunca lista mais que 10. O painel `/waifu` -> Coleção -> Disponíveis continua sem `limite` (pode paginar por cima de tudo).
+- **Mensagem de botões do roll repetia os cards já mostrados individualmente (2026-08-29, usuário: "ta repetindo os cards de todos os personagens, sendo q eles ja foram enviados 1 por msg antes")** - `gacha.enviar_resultados` (usado por `/wa`/`/ha`/`/ma`) e `auto_colecionador.py` mandavam os MESMOS embeds de novo na mensagem de botões, além dos cards individuais com reação que já tinham acabado de sair. Removidos os embeds dessa mensagem - só sobra o texto "👇 Ou reivindique por aqui:" + os botões (o rótulo de cada botão já mostra o nome).
+- **Causa raiz real do "sumiço" de rolls: timeout de 3s do Discord CONSUMIA o ciclo sem mostrar nada (2026-08-29, achado em produção pela 2ª vez)** - usuário relatou "aplicativo não respondeu" na 1ª tentativa de `/wa`, "já usei os 50" na 2ª. `_rolar_e_responder` (`eris/bot.py`) e `ViewHubWaifu._rolar` (`eris/colecao/paineis.py`) chamavam `gacha.rolar_varios` (síncrono) ANTES de `interaction.response.defer()` - o comentário antigo dizia que o defer protegia "puxadas grandes", mas ele vinha DEPOIS da chamada lenta, então não protegia nada. Medido: 50 chamadas de `db.candidatos_por_raridade` sozinhas já levam **4.8s** - bem acima dos 3s que o Discord dá pra um ACK. Como `db.consumir_rolls` acontece bem no INÍCIO de `rolar_varios`, o timeout matava a interação DEPOIS do ciclo já ter sido gasto, sem nenhum resultado visível - exatamente o padrão relatado (1ª tentativa "não respondeu", 2ª já "sem rolls"). Corrigido: `defer()` movido pra ANTES da chamada, `rolar_varios` agora roda em `asyncio.to_thread` (evita travar o loop assíncrono inteiro durante uma puxada de 50), e o caminho "sem rolls" passou a usar `followup.send` (já que a resposta inicial virou sempre um defer). Rolls do usuário resetados manualmente de novo depois do fix.
+- **"🔄 Trocar" pedia IDs digitados - virou dropdown só com personagens possuídas (2026-08-29, pedido do usuário)** - "prefiro q seja um dropdown q permita escrever nome para pesquisar doq passar id, n decoro ids" + "coloca apenas personagens possuidos no dropdwon". O Modal original (`_ModalPropostaTroca`) pedia IDs separados por vírgula pra oferecer/pedir - substituído por 2 selects em sequência (`_ViewEscolherPersonagensTroca`, reaproveitada pras 2 etapas): "oferece" populado com a coleção de quem propõe, "pede" populado com a coleção do ALVO - Discord já deixa digitar pra filtrar dentro do próprio select nativo, sem precisar de busca customizada. Só os 2 valores em WiShards continuam sendo texto (`_ModalWishardsTroca`, número é rápido de digitar, personagem não).
+- **Upgrade de rolls não dizia o que fazia, só o preço (2026-08-29, pedido do usuário: "n deixa claro oq faz, so o custo")** - mensagem de confirmação do botão "⬆️ Upgrade" no painel agora inclui o efeito (+5 rolls/ciclo PRA SEMPRE, acumulado) antes do preço.
+- **"🎲 Rolar" do painel `/waifu` gastava o ciclo INTEIRO num clique só (2026-08-29, achado em produção)** - usuário reportou "meus rolls deveriam ter resetado, mas n consigo rolar" - a causa era o próprio botão: ele chamava `gacha.rolar_varios(..., "ma", 0)`, o MESMO "máximo disponível" que `/ma` sem parâmetro usa de propósito, mas num botão rotulado só "Rolar" isso rola os 50 do ciclo inteiro num único clique, sem aviso nenhum. Corrigido pra `quantidade=1` - `/wa`/`/ha`/`/ma` continuam sendo o caminho pra rolar tudo de propósito. Rolls do usuário resetados manualmente no banco pra compensar o ciclo perdido; personagem #117 (Kirisaki Chitoge) atribuída manualmente à conta da GAIA - ela tinha rolado mas perdeu a corrida de claim (5min) por causa do restart do processo no meio da janela.
+- **Painel de Party tinha botão por slot numerado, sem nenhuma utilidade real (2026-08-29)** - usuário perguntou "ter q selecionar 1 por vez em cada slot tem alguma utilidade?" - conferindo o `GruposPanel.cs` do LegendsAwaken de verdade, a resposta era não: o LA não tem conceito de slot NENHUM, só adiciona/remove de um conjunto de até 5; nada no ERIS hoje lê a posição da Party pra decidir algo (sem Torre/formação ainda). Trocado os 5 botões de slot por 2 (➕ Adicionar/➖ Remover, cada um com select multi-escolha até o número de vagas livres) - a coluna `posicao` do banco continua existindo, só parou de aparecer na UI (a próxima posição livre é escolhida sozinha).
+- **Wishlist agora marca com "✨" quem já tem dono (2026-08-29, pedido do usuário)** - `db.wishlist_disponiveis_no_guild` já excluía esses itens da chance de aparecer num wish-roll, mas nada avisava por quê o item continuava na lista sem nunca mais sortear.
+- **Reset fixo não corrigia sozinho um `*_resetam_em` salvo de ANTES do
+  fix (2026-08-29, achado em produção)** - usuário reiniciou o ecossistema
+  esperando poder jogar num horário redondo e continuou vendo "tenta de
+  novo em ~7 min", porque o valor salvo antes da correção (calculado como
+  "última ação + janela") não tinha por que coincidir com a grade fixa
+  nova, e reset preguiçoso só recarrega quando o valor salvo JÁ expirou.
+  `db._restantes_validos` agora também trata como expirado um reset salvo
+  que simplesmente não bate com o horário fixo atual - `claims_
+  disponiveis`/`tempo_restante` ganharam esse mesmo tratamento (antes só
+  `_consumir_recurso` tinha sido corrigido, o que mascarava o self-heal
+  com uma mensagem de espera errada). Sem migração de dado, tudo
+  recalculado na leitura. Ver "Reconciliação de reset antigo/desalinhado"
+  em `ARQUITETURA.md`.
+
+### Corrigido
+- **Prova de Soulmate REDESENHADA depois de testar ao vivo (2026-08-29, feedback do usuário sobre a Hyuga Hinata, revisando uma sugestão do GPT)** - a versão original só tinha um texto narrativo ("intro") seguido direto do botão "Enfrentar Prova": prometia "escolha a resposta que melhor demonstra compaixão", mas não existia escolha nenhuma, só a % decidindo tudo - "a Prova promete uma interação e depois parece resolver tudo só pela chance de 3%... isso faz o texto parecer cenográfico, não uma prova de verdade". Agora a GAIA gera uma SITUAÇÃO + exatamente 3 OPÇÕES de resposta (uma marcada como a que combina com a personalidade da personagem); escolher a certa dá um bônus FIXO de chance (+10pp, `gacha._BONUS_ESCOLHA_CORRETA_PROVA_SOULMATE`) só NESSA tentativa - nunca garante sucesso sozinho, o RNG/pity continuam decidindo. `prova_soulmate_intro` (coluna) removida (`DROP COLUMN`, SQLite 3.35+); novas: `prova_soulmate_situacao`/`prova_soulmate_opcoes` (JSON)/`prova_soulmate_reacao_acerto`/`prova_soulmate_reacao_erro`. Também encurtado o texto de derrota (mostrado toda tentativa perdida - antes soava "resposta de assistente genérico" de tanto se repetir, agora é 1 frase só, sem dar conselho). UI consolidada numa ÚNICA mensagem editada (`edit_original_response`/`edit_message` em cada etapa, nunca um followup novo) - antes cada etapa criava uma mensagem "Só você pode ver" separada. `db.definir_textos_prova_soulmate` trocou o guard de `WHERE prova_soulmate_nome IS NULL` pra `WHERE prova_soulmate_opcoes IS NULL` - Hyuga Hinata (testada ANTES do redesenho) se auto-cura sozinha na próxima vez que a Prova dela for aberta, sem UPDATE manual. Ver "Prova de Soulmate" em `ARQUITETURA.md`.
+- **"Puxada X/10" voltou a reiniciar a cada lote nos rolls do AUTO-COLECIONADOR (2026-08-29, achado do usuário: "e os rolls dos bots ainda estao com Puxada X/10... é a msm coisa, n deveria ter de corrigir em locais diferentes")** - o fix de numeração global já feito pro roll de JOGADOR (`enviar_resultados`) nunca chegou no auto-colecionador (`auto_colecionador.py::_rodar_tiros_guild`), porque este tinha sua PRÓPRIA cópia manual do mesmo loop "dividir em lotes de 10 pro Discord" (5 chamadas de `rolar_sem_cooldown(..., 10, ...)` em sequência, cada uma reiniciando a numeração). Extraído `gacha.enviar_resultados_em_lotes` - ÚNICA implementação desse loop agora, reaproveitada tanto por `enviar_resultados` quanto pelo auto-colecionador (que passou a rolar os 50 de uma vez só e deixar a divisão em mensagens de 10 pra função compartilhada). Constantes `TAMANHO_LOTE`/`NUMERO_LOTES` removidas de `auto_colecionador.py` (ficaram sem uso depois da extração). Ver "Bug real: mesma lógica duplicada em 2 lugares" em `ARQUITETURA.md`.
+
 ### Adicionado
+- **`/colecao_admin definir_afinidade` (2026-08-29, pedido do usuário: "n existe ninguem com afinidade 10, de comando de admin p editar")** - define a Afinidade de alguém com uma personagem direto (0-10, `db.definir_afinidade_admin`), sem passar pelos reencontros de verdade - pensado pra testar a Prova de Soulmate (que só habilita em Afinidade 10) sem esperar 9 rolls sortudos. Exige que o alvo já seja dono da personagem nesse servidor (mesma checagem de `_definir_slot_equipe`); não mexe em `is_soulmate`/tentativas, só na Afinidade em si.
+- **Prova de Soulmate (2026-08-29, `ERIS_power_afinidade_soulmate_niveis.md`)** - substitui o auto-flag antigo "Afinidade 10 == Soulmate" (só cosmético `💍`) por uma tentativa de verdade que o jogador precisa vencer, 1x/hora por personagem, com chance/pity POR RARIDADE (de ~35% inicial +15pp/falha, pity na 5ª tentativa pra 1⭐, até 3% inicial +4pp/falha, pity na 20ª pra 5⭐ - números validados numa revisão sobre uma proposta do GPT). Botão "💞 Prova de Soulmate" no painel `/waifu` -> Perfil (`ViewPerfilAcoes`) abre um select das personagens elegíveis (`db.personagens_prontas_para_prova`, Afinidade 10 e ainda não Soulmate) e depois a tela da Prova, com flavor text (nome/descrição/intro/derrota/vitória) gerado 1x pela GAIA via LLM (`POST /eris/colecao_prova_soulmate`, espelha `/eris/colecao_classificar`) e cacheado pra sempre (`colecao_personagens.prova_soulmate_*`) - se a GAIA estiver fora do ar, cai pra um texto genérico baseado no nome, a mecânica em si nunca depende da LLM responder. O pity é um branch EXPLÍCITO (`tentativa >= pity: sucesso forçado`), não emerge sozinho da matemática. `is_soulmate`/`soulmate_tentativas`/`soulmate_ultima_tentativa_em` (novo em `colecao_afinidade`) trocam o `afinidade >= 10` antigo em `montar_embed`/`consulta.linha_personagem`/`db.obter_equipe` - emoji trocado de `💍` pra `💞`, com cor de embed exclusiva (`gacha._COR_SOULMATE`) fazendo as vezes de "moldura" (ERIS usa embed puro, sem asset de imagem renderizada). Nenhum Soulmate real existia em produção ainda, então não teve migração de dado - só o comportamento mudou. Sistema de "Nível de Personagem"/Power (mesmo documento) e Torre/Cidade (mecânica do LegendsAwaken) ficam de fora desta leva - ver `ARQUITETURA.md`.
+- **Cards de reação pendentes PERSISTIDOS - sobrevivem a restart (2026-08-29, pedido do usuário: "cria uma tabela com a msm logica dos colecoes disponiveis, ela registra a hora q foi feito o roll, checa o tempo de duração configurado no server p ficar disponiveil, todas q expiraram pode remover")** - achado real: um restart do processo (bem comum durante esta sessão de fixes) no meio da janela de 1h fazia perder acesso a uma personagem já rolada - o card continuava visível no canal, mas a reação virava um no-op silencioso, já que `gacha._CARDS_REACAO_PENDENTES` vivia só em memória. Tabela nova `colecao_cards_pendentes` (`message_id`, `guild_id`, `personagem_id`, `emoji`, `expira_em`) + `db.registrar_card_pendente`/`card_pendente_por_mensagem`/`remover_card_pendente`/`cards_pendentes` - reset PREGUIÇOSO (remove expirados na leitura, sem job/cron à parte) e filtra quem JÁ tem dono (reivindicado pelo OUTRO caminho - botão da mensagem combinada - conta de verdade em vez de confiar em toda ação de claim lembrar de limpar a linha). Pedido junto: "se possivel, isso ser feito sem causar delay enquanto ta rodando comando" - `/colecao_disponiveis` agora deferre ANTES de consultar (`asyncio.to_thread`), mesmo cuidado do bug de timeout corrigido mais cedo hoje; a query em si é pequena/indexada por guild, bem mais leve que o `rolar_varios` que causou aquele bug.
+- **"Puxada N/M" agora mostra a posição real dentro do limite do ciclo, não do lote de 10 (2026-08-29, pedido do usuário: "é p ser o numero q aquele roll representa dentre o limite atual do usuario ex 13/50")** - antes reiniciava em 1 a cada lote de 10 embeds (limite técnico de botões, não de dificuldade), então uma puxada de 50 mostrava "1/10, 2/10... 1/10" de novo. `gacha._limite_rolls_atual` (extraída de `rolar_varios`, evita duplicar a conta) calcula o limite de rolls da pessoa nesse ciclo (config do servidor + upgrade permanente); `enviar_cards_individuais` ganhou `indice_inicial`/`total_ciclo` pra numerar GLOBALMENTE dentro do roll inteiro.
+- **Upgrade permanente de claims, espelhando o de rolls (2026-08-29, pedido do usuário: "claim tem q ter upgrade permanente tbm")** - `/loja upgrade_claims` (e o botão "🔺 Upgrade de claims" no painel `/waifu` -> Loja) compra até 5 níveis, +1 claim/ciclo PERMANENTE por nível (`db.comprar_upgrade_claims`/`nivel_upgrade_claims`, coluna nova `nivel_upgrade_claims`, migração aditiva). Preços mais altos que o upgrade de rolls (2000/5000/10000/20000/40000 WiShards - `PRECOS_UPGRADE_CLAIMS`) de propósito - claim é o recurso que decide quem fica com a personagem, bem mais valioso que um roll extra. `_processar_claim` (núcleo do claim, botão E reação) passou a somar esse bônus ao `claims_por_ciclo` do servidor, mesmo padrão que rolls já tinham.
+- **`/colecao_admin resetar_rolls`/`resetar_claims`/`dar_personagem` (2026-08-29, pedido do usuário: "cria um comando q me permite resetar rolls de alguem ou dar uma personagem p alguem qnd sou admin", seguido de "comando p resetar claim tbm")** - formaliza correções manuais que eu vinha fazendo direto no banco durante esta sessão (reset de ciclo travado, atribuição de personagem perdida por restart no meio da janela do auto-colecionador). `db.resetar_rolls_admin`/`resetar_claims_admin(guild_id, user_id)` forçam o ciclo a recarregar AGORA (mesmo cálculo do reset preguiçoso, só que sem esperar o horário fixo passar - ambos já incluem o upgrade permanente de quem chamar); `db.atribuir_personagem_admin(guild_id, personagem_id, user_id)` dá uma personagem LIVRE direto pra alguém, com a MESMA recompensa econômica de um claim normal (WiShards + Afinidade inicial) - recusa se a personagem já tiver dono, nunca rouba de ninguém.
+- **`/waifu` - painel-raiz do Colecionador, inspirado no LegendsAwaken (2026-08-29, Fase 1 COMPLETA - passos 1 a 5)** - usuário reportou "os bots estão ficando muito poluídos" (25 comandos raiz no seletor `/`, boa parte do Colecionador) e apontou o próprio bot LegendsAwaken (`C:\Workspace\LegendsAwaken`, C#/Discord.Net) como referência: 1 comando por sistema, navegação depois via embed+botões editados/reenviados, não subcomando. `/waifu` (novo, sem argumento) abre um hub com 8 botões, todos reaproveitando as MESMAS funções de `db`/`gacha`/`consulta`/`economia` que os comandos antigos já chamavam (sem duplicar regra nenhuma):
+  - **🎲 Rolar** (mesmo `gacha.rolar_varios(..., "ma", 0)` de `/ma` sem parâmetro) e **📚 Coleção** (`paineis.ViewColecaoHub`, estende `consulta.ViewColecao` com select de modo - Minha coleção/🔥 Populares/🎯 Disponíveis pra pegar).
+  - **👤 Perfil** (painel NOVO - junta `/carteira`+`/ranking`+contagem de favoritas nova, `db.contar_favoritas`) com botões Favoritar/Divorciar/Merge abrindo um select de até 25 personagens da própria coleção; **⭐ Wishlist** paginada com botão "+ Adicionar" (`discord.ui.Modal`, único desta leva) e select de remoção.
+  - **👥 Party** - SEM comando `/party` nem `/waifu party`, só alcançável pelo botão (mesmo modelo do `Grupos` do LA, zero pegada no seletor `/`) - 5 botões de slot, cada um abrindo um select de personagem + opção de esvaziar.
+  - **🛒 Loja** (comprar/garantir raridade/upgrade de rolls, cada um com seu próprio fluxo de select+confirmação) e **🔄 Trocar** (peça mais arriscada - "propor" virou `discord.ui.UserSelect` + `discord.ui.Modal` em vez de parâmetros de texto; `economia.criar_e_avaliar_troca` extraído do comando antigo, compartilhado pelos dois caminhos) e **🏆 Ranking** (top 25, sem paginação de verdade ainda - formato incompatível com `ViewColecao`).
+  - `economia.executar_merge` também extraído do `/merge` antigo, mesmo motivo (compartilhar regra com o botão Merge do Perfil).
+  Módulo novo `eris/colecao/paineis.py` (~450 linhas). **Passo 6 (remover os comandos antigos) ainda NÃO feito de propósito** - só depois de validar cada botão ao vivo no servidor real, nunca antes (mesmo cuidado de sempre nesse projeto). ERIS reiniciado (papéis "completo" e "musica") pra sincronizar - `/waifu` e `/musica_admin` já aparecem no Discord. Ver "Painel `/waifu`" em `ARQUITETURA.md`.
+- **Rolar o máximo disponível num clique + `/colecao_disponiveis`
+  (2026-08-29)** - pedido do usuário: "quero a opção de com 1 unico
+  clique, rodar os maximo de rolls disponiveis, q no caso é 50. N apenas
+  os 10". `quantidade:0` em `/wa`/`/ha`/`/ma` rola tudo que sobrar no
+  ciclo (ignora `max_rolls_por_comando` de propósito - esse teto é por
+  comando, pedir o máximo é explícito) - e é o DEFAULT do parâmetro
+  (complemento no mesmo dia: "esse quantidade tem q ser opcional, se n
+  colocar, manda tudo"), `/wa` sem nada já rola o máximo. Resultados em
+  qualquer quantidade agora saem em lotes de 10 (cards individuais +
+  mensagem combinada por lote), não mais limitados a um único lote de 10.
+  Seguido de: "um comando q filtre todos os personagens q ainda da p
+  coletar...
+  por raridade, ou ordenado por raridade, com o botao de coletar dos 10
+  principais" - `/colecao_disponiveis [raridade]` lista os cards com
+  reação ainda pendentes (não expirados, sem dono), ordenados por
+  raridade, com botão de claim pros 10 primeiros. Ver "Rolar o máximo
+  disponível"/"`/colecao_disponiveis`" em `ARQUITETURA.md`.
+- **Cards individuais com reação pra reivindicar, estilo Mudae + confirmação
+  de claim consolidada (2026-08-29)** - pedido do usuário: "quero que cada
+  personagem seja enviada em uma mensagem separada, e nela venha a opcao
+  de reagir p pegar, igual no mudae, a mensagem com os 10 botoes pode
+  ficar numa mensagem separada no final normalmente". Cada personagem
+  rolada agora também vira uma mensagem própria com reação de claim
+  (`gacha.enviar_cards_individuais`) - a mensagem combinada de sempre (N
+  embeds + botões) continua igual, mandada por último. Seguido de: "é bom
+  deixar claro que pegou, e a raridade da personagem... unificar tudo
+  relevante p ela em 1 unica mensagem" - as 2 mensagens de confirmação
+  (WiShards + classe) viraram 1 embed só, mencionando quem reivindicou.
+  Vale tanto pra `/wa`/`/ha`/`/ma` quanto pro auto-colecionador. Ver
+  "Cards individuais com reação"/"Confirmação de claim CONSOLIDADA" em
+  `ARQUITETURA.md`.
+- **`/musica_admin canal` - restringe o Modo Música a um canal de texto (2026-08-29)** - pedido do usuário: "assim como a coleção de waifu roda em 1 canal, quero q parte de musica tbm fique so em 1 canal configuravel". `/musica tocar/pular/pausar/continuar/fila/parar/dj_automatico` e `/caos` passam a checar `musica.obter_canal_restrito` antes de agir (`/musica aprovadas`/`desaprovadas` ficam de fora - são consulta pessoal ephemeral, sem barulho no canal). Guardado em `data/musica_canal_restrito.json` (não em `eris.db` - o papel "musica", que é quem registra esses comandos, nunca chama `db.inicializar()`). `/musica_admin ver` mostra a config atual; sem canal informado em `/musica_admin canal`, remove a restrição. Configurado no servidor real (canal `1388915991223730377`).
+- **Classe canônica x classe de exibição (2026-08-29)** - usuário reportou
+  classes erradas (profissão/personalidade em vez de arquétipo de RPG,
+  ex.: "Maid", "Comediante") e uma tensão entre a regra "sempre masculino"
+  e cards femininos artificiais ("Ai Hayasaka [Ladino]"). Corrigido:
+  prompt da GAIA ganhou instrução explícita contra classes-profissão + uma
+  coluna nova (`classe_exibicao`) que concorda em gênero com a personagem
+  pra EXIBIÇÃO, enquanto `classe` continua canônica/masculina pras
+  estatísticas - "Ladino"/"Ladina" nunca viram duas classes. 5 personagens
+  corrigidas manualmente no banco. Ver "Classe deve ser arquétipo de
+  RPG"/"Classe CANÔNICA x classe de EXIBIÇÃO" em `ARQUITETURA.md`.
+- **Sincronização contínua do catálogo (2026-08-29)** - a importação do
+  get_waifu deixa de ser carga única. Módulo novo `eris/colecao/
+  sincronizador.py` reimporta o catálogo sozinho, 1x por semana (pedido do
+  usuário), baixando a versão mais recente e fazendo upsert (nunca
+  duplica). Não dispara de novo só por causa de um restart do processo -
+  só quando o prazo semanal realmente vence. Ver "Sincronização contínua
+  do catálogo" em `ARQUITETURA.md`.
+- **`/populares` (2026-08-29)** - pedido do usuário: "tem comando para
+  listar personagens por popularidade?". Lista o top N (padrão 50, até
+  200) do CATÁLOGO INTEIRO por popularidade, com paginação e respeitando
+  o filtro de NSFW do servidor. Ver "/populares - ranking de popularidade
+  do catálogo" em `ARQUITETURA.md`.
+- **Auto-colecionador (GAIA/ERIS jogam também) + trocas automáticas com
+  conta de bot (2026-08-29)** - pedido do usuário: "coloca para a gaia e a
+  eris tbm coletarem personagens, cada uma roda seus 50 tiros, a gaia vai
+  rodar sempre aos XX:05, e apos 5min, vai escolher o de maior raridade, a
+  eris fara o mesmo, mas rodará aos XX:30 e escolhe aos XX:35". Módulo novo
+  `eris/colecao/auto_colecionador.py` - cada conta de bot rola 50
+  personagens FIXOS (sem cooldown, sem passar por `max_puxada`), em 5
+  lotes de 10 postados como mensagens DE VERDADE no canal configurável
+  (`/colecao_admin canal`, novo) - **corrigido no mesmo dia** (pedido do
+  usuário: "os rolls q os bots fazem tem q mostrar as opcoes, igual os
+  meus. é literalmente rodar /wa 10 5x"): os cards são iguais a um `/wa 10`
+  normal, com botão de Reivindicar de verdade que qualquer humano pode
+  clicar. 5 minutos depois, cada conta reconsulta quem ainda está sem dono
+  e fica com a mais POPULAR entre as que sobraram ("ai da 5min p alguem
+  tentar pegar algum, ele tira da lista das escolhas os q ja foram pegos,
+  e pega o mais popular" - critério é popularidade, não raridade).
+  Seguido de: "elas aceitam trocar se o valor oferecido for 10x oq
+  pagaram... contanto q a soma seja superior ou igual a 10x" -
+  `/trocar propor` com uma conta de bot como alvo agora é decidido na hora
+  (`economia.avaliar_proposta_npc`), sem esperar clique. Ver
+  "Auto-colecionador" em `ARQUITETURA.md`.
+- **Reset de rolls/claims em cronograma FIXO + cor do botão de claim por
+  raridade (2026-08-29)** - correção pedida pelo usuário: "os resets tem
+  de ser a cada hora, 1h, 2h, 3h... não 1h após interação do usuário, vai
+  ser fixo pra geral". O reset deixa de ser calculado a partir da última
+  ação de CADA jogador e passa a ser um horário FIXO compartilhado por
+  todo mundo (ex.: janela de 1h reseta às XX:00 pra todo mundo,
+  simultaneamente), ancorado matematicamente na Época Unix. Botão de
+  Reivindicar também ganhou cor/emoji por raridade (⚪🟢🔵🟣🟡, mesma
+  paleta do embed) - pedido junto: "coloca a cor dos botoes com nome dos
+  personagens condizerem com a raridade". Ver "Ciclo FIXO ancorado na
+  Época Unix" em `ARQUITETURA.md`.
+- **Categoria de combate, Party, Vitrine, Favoritas e Upgrade de Rolls
+  (2026-08-29)** - 3ª fatia de `ERIS_sistema_colecao_wishards.md`.
+  Categoria de combate (DPS/Tank/Support) decidida pela GAIA junto com a
+  classe, mesma chamada de LLM. `/favoritar` protege contra divórcio
+  acidental (exige confirmação, não bloqueia). `/party ver`/`definir`/
+  `remover`/`limpar` (até 5 slots, bloqueia DURO o Merge de quem estiver
+  lá dentro) e `/vitrine` (mesma mecânica, só mostruário público). `/loja
+  upgrade` compra rolls máximos permanentes (+5/nível, até 5 níveis).
+  `/colecao_admin bloquear_serie`/`desbloquear_serie`. Soulmate (Afinidade
+  10) ganha marcador cosmético 💍. Torre/Steal/conquistas/eventos ficaram
+  de fora - ver TODO.md pro motivo de cada um.
+- **Loja, Guaranteed Roll, Merge e Trocas (2026-08-29)** - 2ª fatia de
+  `ERIS_sistema_colecao_wishards.md`. `/loja ver`/`comprar` (só personagens
+  livres, preços fixos por raridade, reembolsa se perder a corrida);
+  `/loja garantir` (garante raridade mínima no PRÓXIMO roll, consumo
+  único); `/merge <5 ids> [confirmar]` (5 da mesma raridade → 1 aleatória
+  da seguinte, exige `confirmar:true` se alguma tiver Afinidade > 1);
+  `/trocar propor` (troca bilateral personagem/personagem/WiShards em
+  qualquer combinação, botões Aceitar/Recusar - revalida tudo de novo no
+  aceite, sem reservar nada durante a proposta, simplificação deliberada
+  pra escala pessoal). Módulo novo `eris/colecao/economia.py`. Ver "Loja,
+  Guaranteed Roll, Merge e Trocas" em `ARQUITETURA.md`.
+- **WiShards, Afinidade e Reencontro (2026-08-29)** - 1ª fatia de
+  `ERIS_sistema_colecao_wishards.md` (economia). Personagem já reivindicada
+  volta a poder aparecer no roll - rolar a própria personagem é um
+  "reencontro" (Afinidade +1 até 10, paga `valor_base × afinidade` na hora,
+  sem clique); rolar a de outra pessoa paga METADE desse valor pro dono de
+  verdade, sem mudar Afinidade nem dar nada a quem rolou. Afinidade nasce
+  em 1 no claim e SOBREVIVE ao divórcio (resgate futuro mantém o vínculo).
+  Divórcio agora paga `valor_base × afinidade` (antes não pagava nada).
+  Comando novo `/carteira`. `/colecao` mostra Afinidade (`❤️N`). Decisão de
+  classes revisada: taxonomia aberta (GAIA) continua como estava; uma
+  "categoria de combate" fixa (DPS/Tank/Support) pra regras da Torre é
+  atributo SEPARADO, ainda não implementado. Ver "WiShards, Afinidade e
+  Reencontro" em `ARQUITETURA.md`.
+- **Colecionador de Personagens - MVP inspirado na Mudae (2026-08-29)** -
+  `/wa`/`/ha`/`/ma` (roll + card com botão de Reivindicar), `/colecao`,
+  `/personagem`, `/divorciar`, `/ranking`, `/wishlist`, `/colecao_admin
+  nsfw`. Catálogo de 30.965 personagens importado do
+  [get_waifu](https://github.com/JiachenRen/get_waifu) (`eris/colecao/
+  importar_get_waifu.py`); raridade fixa por percentil de popularidade
+  (50/30/15/4/1%); dono único por (servidor, personagem), claim atômico
+  (`ON CONFLICT DO NOTHING`); cooldown de roll/claim com reset preguiçoso,
+  sem job; NSFW ligado por padrão, desligável a qualquer momento por
+  servidor. Divisão de módulos (`eris/colecao/gacha.py`/`consulta.py`)
+  inspirada no [Fable](https://github.com/ker0olos/fable) (MIT), sem
+  copiar a stack dele (TypeScript+MongoDB). Ver "Colecionador de
+  Personagens" em `ARQUITETURA.md` pro detalhe completo das decisões, e
+  TODO.md pro que ficou de fora do MVP (economia real, trocas, `/wg`/`/hg`/
+  `/mg`) - ainda não validado contra um servidor Discord real.
+- **Perfil "VIP fácil" + "puxada" de várias personagens (2026-08-29)** -
+  pedido do usuário logo depois do MVP acima: "quero q seja tipo um vip do
+  mudae, ser mais fácil". Card de Reivindicar passou de 30s pra 1h; roll
+  de 10/hora pra 50/hora; claim de 1 a cada 3h pra 1 a cada 1h. `/wa`/
+  `/ha`/`/ma` ganharam o parâmetro `quantidade` (1-10, "permitir dar 10
+  pulls de 1x") - uma mensagem só com até 10 embeds e um botão de
+  Reivindicar por personagem (`ViewClaimMultiplo`, substitui a `ViewClaim`
+  de botão único).
+- **Toda a dificuldade virou configurável por servidor (2026-08-29)** -
+  pedido do usuário: "o certo seria tudo q definimos ali ser configurável".
+  Rolls/ciclo, claims/ciclo, duração do card, tamanho máximo da puxada e
+  chance de wish-roll saíram de constantes fixas em `gacha.py` pra colunas
+  em `colecao_configuracao_guild` (migração aditiva, preserva servidores já
+  configurados). `/colecao_admin` ganhou `rolls`, `claims`, `duracao_card`,
+  `max_puxada`, `wishlist_chance` e `ver` (mostra a config atual) -
+  restritos a administrador do servidor, igual `/colecao_admin nsfw` já
+  era.
+- **Tela visual no Painel da GAIA pra configurar o Colecionador (2026-08-29)**
+  - pedido do usuário: "n tem uma tela ou algo visual p configurar?". 2
+  rotas HTTP novas (`GET /colecao_config/<guild_id>`, `POST /colecao_
+  config`) pra config por servidor (diferente de `/config_roteamento`, que
+  é global do bot) - `/colecao_admin` no Discord continua existindo, agora
+  é só mais um jeito de editar o mesmo dado.
+- **Classe da personagem, decidida pela GAIA na hora da reivindicação
+  (2026-08-29)** - pedido do usuário: "consegue pegar 5 personagens e
+  definir fácil classe e raridade delas?" seguido de "o ideal não é você
+  fazer isso, é a gaia... essa info vai ser meio que secreta". `classe` fica
+  NULL até o 1º claim de cada personagem em qualquer servidor - nunca
+  aparece no card do roll, só em `/colecao`/`/personagem`/`/wishlist` depois
+  de revelada. Webhook reverso novo (`POST /eris/colecao_classificar`) pede
+  pra GAIA (LLM) decidir, com taxonomia ABERTA que cresce sozinha
+  (reaproveita classe existente quando encaixa, inventa uma nova só quando
+  necessário - "tipo pirata"). Nunca atrasa o claim (mensagem separada,
+  chega ~1-2s depois). Achado testando: `MODELO_JUIZ` (Groq) está
+  descomissionado (404) - também quebra o juiz do Modo em Grupo, bug
+  pré-existente não corrigido aqui (fora do escopo), registrado em TODO.md.
 - **`/musica fila`/📋 agora mostram "(👍)"/"(👎)" igual o anúncio de "tocando agora" (2026-08-28)** - pedido do usuário: "no listar tem q por o voto se tiver, igual tem os (👍) no final de qnd toca". `obter_fila` virou async pra buscar o voto de cada faixa antes de montar a resposta.
+- **`/musica aprovadas`/`desaprovadas` ganharam páginas e permitem trocar o voto (2026-08-28)** - pedido do usuário: "a lista de musicas com like e dislike supera muito 25, tem q criar paginas e permitir alterar". Antes cortava silenciosamente em `faixas[:25]`; agora `musica.ViewListaVotos` pagina de verdade (◀️/▶️, até 25 por página) e um select deixa escolher uma faixa da página pra abrir `_ViewTrocarVoto` (botões Aprovar/Desaprovar, o que já reflete o voto atual vem desabilitado) - reaproveita o mesmo `gaia_webhook.pedir_feedback_musica` dos botões 👍/👎 de "tocando agora", sem precisar esperar a faixa tocar de novo.
 
 ### Alterado
+- **👎 na mensagem de "tocando agora" já pula a faixa junto (2026-08-29)** - pedido do usuário: "qnd clico no dislike, pode ja pular a musica junto tbm". Só pula quando a faixa desaprovada é a que está tocando NAQUELE momento (`sessao.tocando_agora`) - clicar 👎 numa mensagem antiga (rolando o histórico do canal) continua só registrando o voto, sem mexer na música atual. Skip restrito a quem iniciou a sessão (pedido em seguida: "pode restirngir o skip do dislike a quem iniciou") - o voto em si continua aberto a qualquer membro, só o efeito colateral de pular fica com a mesma régua de `/musica pular`/⏭️.
 - **Um 👎 numa faixa não afeta mais o resto do mesmo artista (2026-08-27)** - implementado E revertido no mesmo dia: primeiro adicionei `SessaoMusica.remover_artista_da_fila_logica` pra limpar candidatos do mesmo artista da fila lógica local num 👎 (espelhando `pool.invalidar_relacionados` do ECHO), depois o usuário apontou que a premissa em si estava errada - "um 👎 em 1 musica n pode condenar todas desse artista. Assim como o like n aprova todas tbm, algumas eu gosto e outras nao". Revertido - voto agora fica estritamente na faixa exata, nunca no artista inteiro (ver changelog do [Project ECHO](../../Project-ECHO)).
+- **`/caos` não sugere mais nada se já tem sessão ativa no servidor (2026-08-28)** - antes reaproveitava a sessão existente e enfileirava mais uma sugestão do ECHO por baixo dos panos, mesmo com música pausada (o usuário esqueceu que já tava tocando/pausada e usou `/caos` de novo achando que ela ainda ia entrar na call). Agora avisa "Já tô na call tocando música nesse servidor." e, se pausada, complementa pedindo `/musica continuar` - não mexe mais na sessão nesse caso.
 
 ## [0.1.0] - 2026-08-24 a 2026-08-27: Extração completa - moderação, voz e Modo Música com buffer em 3 camadas (PRs #1 a #27)
 

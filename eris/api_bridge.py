@@ -82,6 +82,9 @@ class _API(BaseHTTPRequestHandler):
             user_id = self.path[len("/perfil/"):]
             perfil = mensagens.buscar_perfil_discord(user_id, _token_atual())
             self._responder_json(perfil or {})
+        elif self.path.startswith("/colecao_config/"):
+            guild_id = self.path[len("/colecao_config/"):]
+            self._responder_json(db.obter_configuracao_colecao(guild_id))
         else:
             self._responder_404()
 
@@ -130,6 +133,12 @@ class _API(BaseHTTPRequestHandler):
             from eris.core import exportador
             ok, resultado = exportador.exportar_canal(corpo.get("channel_id"), _token_atual(), corpo.get("limite_mensagens"))
             self._responder_json({"ok": ok, "resultado": resultado})
+        elif self.path == "/colecao_config":
+            try:
+                db.definir_configuracao_colecao(corpo.get("guild_id"), corpo.get("campo"), corpo.get("valor"))
+                self._responder_ok()
+            except ValueError as e:
+                self._responder_json({"ok": False, "erro": str(e)}, status=400)
         else:
             self._responder_404()
 

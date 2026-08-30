@@ -37,6 +37,7 @@ são reabastecidas em BACKGROUND (`asyncio.create_task`, nunca bloqueando a
 reprodução atual) sempre que caem abaixo do mínimo."""
 import asyncio
 import json
+import math
 import os
 import time
 
@@ -125,6 +126,45 @@ def _salvar_fila_logica_persistida(guild_id, fila_logica):
     os.makedirs(_PASTA_SESSOES_PERSISTIDAS, exist_ok=True)
     with open(_arquivo_fila_sessao(guild_id), "w", encoding="utf-8") as f:
         json.dump(fila_logica, f, ensure_ascii=False, indent=2)
+
+
+_ARQUIVO_CANAL_RESTRITO = os.path.join(_PASTA_SESSOES_PERSISTIDAS, "musica_canal_restrito.json")
+
+
+def _carregar_canais_restritos():
+    if not os.path.exists(_ARQUIVO_CANAL_RESTRITO):
+        return {}
+    try:
+        with open(_ARQUIVO_CANAL_RESTRITO, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def obter_canal_restrito(guild_id):
+    """Canal onde os comandos de música em si (`/musica tocar/pular/
+    pausar/continuar/fila/parar/dj_automatico`, `/caos`) funcionam nesse
+    servidor (2026-08-29, pedido do usuário: "assim como a coleção de
+    waifu roda em 1 canal, quero q parte de musica tbm fique so em 1 canal
+    configuravel"). None = sem restrição (comportamento de sempre, qualquer
+    canal de texto serve). Guardado em JSON própria (`data/musica_canal_
+    restrito.json`), não em `eris.db` - o papel "musica" (2ª instância
+    dedicada, ver `eris/main.py`) NUNCA chama `db.inicializar()`, e só ela
+    registra esses comandos."""
+    return _carregar_canais_restritos().get(str(guild_id))
+
+
+def definir_canal_restrito(guild_id, canal_id):
+    """`canal_id=None` remove a restrição (volta a funcionar em qualquer
+    canal de texto do servidor)."""
+    canais = _carregar_canais_restritos()
+    if canal_id is None:
+        canais.pop(str(guild_id), None)
+    else:
+        canais[str(guild_id)] = str(canal_id)
+    os.makedirs(_PASTA_SESSOES_PERSISTIDAS, exist_ok=True)
+    with open(_ARQUIVO_CANAL_RESTRITO, "w", encoding="utf-8") as f:
+        json.dump(canais, f, ensure_ascii=False, indent=2)
 
 
 def _remover_fila_logica_persistida(guild_id):
@@ -266,7 +306,31 @@ class _ViewControlesMusica(discord.ui.View):
 
     @discord.ui.button(emoji="👎", style=discord.ButtonStyle.red)
     async def _dislike(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self._feedback(interaction, "negativo", "Anotado - menos disso.")
+        """👎 já pula a faixa junto (2026-08-29, pedido do usuário: "qnd
+        clico no dislike, pode ja pular a musica junto tbm", depois "pode
+        restirngir o skip do dislike a quem iniciou") - o VOTO continua
+        aberto a qualquer membro (mesmo espírito de like/dislike de
+        sempre), mas o skip só dispara se (a) for a faixa tocando AGORA
+        (`sessao.tocando_agora` - numa mensagem antiga de "tocando agora",
+        rolando o histórico do canal, mesmo caso do ▶️ replay, dislike
+        continua só registrando o voto, senão pularia a música ERRADA) E
+        (b) quem clicou é quem iniciou a sessão (`sessao.iniciado_por`) -
+        mesma régua de `_somente_iniciador`/`/musica pular`, só que sem
+        bloquear o voto de quem não iniciou, só o efeito colateral de
+        pular."""
+        await interaction.response.defer(ephemeral=True)
+        await asyncio.to_thread(gaia_webhook.pedir_feedback_musica, interaction.user.id, self._artista, self._titulo, "negativo")
+        resposta = "Anotado - menos disso."
+        sessao = _sessoes_musica.get(self._guild_id)
+        pode_pular = (
+            sessao is not None and str(interaction.user.id) == sessao.iniciado_por
+            and sessao.tocando_agora is not None
+            and sessao.tocando_agora.get("artista") == self._artista
+            and sessao.tocando_agora.get("titulo") == self._titulo
+        )
+        if pode_pular:
+            resposta += " " + pular(self._guild_id)
+        await interaction.followup.send(resposta, ephemeral=True)
 
     @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.blurple)
     async def _tocar_de_novo(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -291,6 +355,113 @@ class _ViewControlesMusica(discord.ui.View):
             await interaction.followup.send("Não tô tocando nada nesse servidor agora.", ephemeral=True)
             return
         await interaction.followup.send(formatar_estado_fila(estado), ephemeral=True)
+
+
+_PAGINA_VOTOS_TAMANHO = 25  # teto do Discord pra opções de um select, dá pra usar a página inteira
+
+
+class _ViewTrocarVoto(discord.ui.View):
+    """Botões pra trocar o voto de UMA faixa escolhida em `ViewListaVotos`
+    (2026-08-28) - reaproveita o MESMO `gaia_webhook.pedir_feedback_musica`
+    que os botões 👍/👎 de "tocando agora" já usam (`_ViewControlesMusica.
+    _feedback`), só que fora do momento em que a faixa toca."""
+
+    def __init__(self, discord_user_id, artista, titulo, tipo_atual):
+        super().__init__(timeout=180)
+        self._discord_user_id = discord_user_id
+        self._artista = artista
+        self._titulo = titulo
+        aprovar = discord.ui.Button(label="Aprovar", emoji="👍", style=discord.ButtonStyle.green, disabled=tipo_atual == "positivo")
+        aprovar.callback = self._aprovar
+        desaprovar = discord.ui.Button(label="Desaprovar", emoji="👎", style=discord.ButtonStyle.red, disabled=tipo_atual == "negativo")
+        desaprovar.callback = self._desaprovar
+        self.add_item(aprovar)
+        self.add_item(desaprovar)
+
+    async def _votar(self, interaction, valor, resposta):
+        await interaction.response.defer(ephemeral=True)
+        await asyncio.to_thread(gaia_webhook.pedir_feedback_musica, self._discord_user_id, self._artista, self._titulo, valor)
+        await interaction.followup.send(resposta, ephemeral=True)
+
+    async def _aprovar(self, interaction: discord.Interaction):
+        await self._votar(interaction, "positivo", f"Movido pra aprovadas: **{self._titulo} - {self._artista}**")
+
+    async def _desaprovar(self, interaction: discord.Interaction):
+        await self._votar(interaction, "negativo", f"Movido pra desaprovadas: **{self._titulo} - {self._artista}**")
+
+
+class ViewListaVotos(discord.ui.View):
+    """`/musica aprovadas`/`desaprovadas` (2026-08-28, pedido do usuário: "a
+    lista de musicas com like e dislike supera muito 25, tem q criar
+    paginas e permitir alterar") - substitui o corte silencioso em
+    `faixas[:25]` por paginação de verdade (◀️/▶️, uma página = até 25
+    faixas, mesmo teto do select abaixo) e deixa escolher uma faixa da
+    página pra trocar o voto sem precisar esperar ela tocar de novo
+    (abre `_ViewTrocarVoto` numa resposta ephemeral à parte)."""
+
+    def __init__(self, discord_user_id, tipo, faixas, pagina=0):
+        super().__init__(timeout=180)
+        self._discord_user_id = discord_user_id
+        self._tipo = tipo  # "positivo" (aprovadas) ou "negativo" (desaprovadas) - lista de ORIGEM
+        self._faixas = faixas
+        self._pagina = pagina
+        self._montar()
+
+    @property
+    def _total_paginas(self):
+        return max(1, math.ceil(len(self._faixas) / _PAGINA_VOTOS_TAMANHO))
+
+    def _pagina_atual(self):
+        inicio = self._pagina * _PAGINA_VOTOS_TAMANHO
+        return self._faixas[inicio:inicio + _PAGINA_VOTOS_TAMANHO]
+
+    def _montar(self):
+        self.clear_items()
+        pagina_faixas = self._pagina_atual()
+        select = discord.ui.Select(
+            placeholder="Escolha uma faixa pra trocar o voto...",
+            options=[
+                discord.SelectOption(label=f"{f['titulo']} - {f['artista']}"[:100], value=str(i))
+                for i, f in enumerate(pagina_faixas)
+            ],
+        )
+        select.callback = self._selecionou
+        self.add_item(select)
+
+        anterior = discord.ui.Button(emoji="◀️", style=discord.ButtonStyle.secondary, disabled=self._pagina == 0)
+        anterior.callback = self._ir_anterior
+        self.add_item(anterior)
+
+        proxima = discord.ui.Button(emoji="▶️", style=discord.ButtonStyle.secondary, disabled=self._pagina >= self._total_paginas - 1)
+        proxima.callback = self._ir_proxima
+        self.add_item(proxima)
+
+    def formatar(self):
+        titulo = "aprovadas" if self._tipo == "positivo" else "desaprovadas"
+        inicio = self._pagina * _PAGINA_VOTOS_TAMANHO
+        linhas = [f"{inicio + i + 1}. {f['titulo']} - {f['artista']}" for i, f in enumerate(self._pagina_atual())]
+        return (
+            f"**Suas músicas {titulo} ({len(self._faixas)} no total, página {self._pagina + 1}/{self._total_paginas}):**\n"
+            + "\n".join(linhas)
+        )
+
+    async def _ir_anterior(self, interaction: discord.Interaction):
+        self._pagina -= 1
+        self._montar()
+        await interaction.response.edit_message(content=self.formatar(), view=self)
+
+    async def _ir_proxima(self, interaction: discord.Interaction):
+        self._pagina += 1
+        self._montar()
+        await interaction.response.edit_message(content=self.formatar(), view=self)
+
+    async def _selecionou(self, interaction: discord.Interaction):
+        faixa = self._pagina_atual()[int(interaction.data["values"][0])]
+        await interaction.response.send_message(
+            f"**{faixa['titulo']} - {faixa['artista']}**",
+            view=_ViewTrocarVoto(self._discord_user_id, faixa["artista"], faixa["titulo"], self._tipo),
+            ephemeral=True,
+        )
 
 
 class SessaoMusica:
@@ -683,6 +854,15 @@ async def _obter_ou_criar_sessao(voice_channel, text_channel, discord_user_id):
         except Exception as e:
             return None, f"Não consegui entrar na call: {e}"
         _sessoes_musica[guild_id] = sessao
+    else:
+        # 🔥 Segue o canal de quem está usando o comando AGORA (2026-08-30,
+        # achado do usuário: "Usar o /caos em qq canal vai sempre fazer ela
+        # responder no canal definido") - antes `text_channel` só era
+        # gravado na CRIAÇÃO da sessão (`entrar()`), então "Tocando: X"
+        # continuava saindo pra sempre no canal onde a sessão nasceu, mesmo
+        # que comandos seguintes (`/musica tocar`, `/caos` com sessão já
+        # ativa) fossem chamados de outro canal.
+        sessao.text_channel = text_channel
     return sessao, None
 
 
@@ -755,15 +935,24 @@ async def iniciar_caos(voice_channel, text_channel, discord_user_id):
     PRIMEIRA busca sem pedir nada ao usuário, e disparar o reabastecimento
     das 2 camadas de buffer em background logo em seguida.
 
-    🔥 Reseta `_modo_aprovadas` (2026-08-27, bug relatado pelo usuário:
-    "assim q eu uso o /caos, ele tem de ignorar tudo p tras e seguir a
-    logica do /caos... o caos so ta tocando 1 musica") - `_obter_ou_criar_
-    sessao` reaproveita a sessão já ativa se ela veio de um `/musica tocar`
-    (aprovadas) anterior; sem resetar essa flag aqui, `_avancar()`
-    continuava tratando a sessão como "lista fechada de aprovadas" (parava
-    e repetia o aviso de esgotado) mesmo depois do usuário pedir `/caos`
-    explicitamente, e `_agendar_reabastecimento` nunca enchia a fila lógica
-    de novo (só reabastece quando `_modo_aprovadas` é False)."""
+    🔥 Se já tem sessão ativa nesse servidor, não sugere mais nada por baixo
+    dos panos (2026-08-28, usuário: "eu msm tinha esquecido q a musica tava
+    pausada, usei o /caos p por ela na call, msm ja estando... substitui
+    essa funcao atual dela por um aviso de que eris ja esta na call. E se a
+    musica tiver pausada, fala q ta pausada tbm") - `modo_continuo` já
+    reabastece a fila sozinho (ver `_avancar`/`_agendar_reabastecimento`),
+    então uma 2ª sugestão do ECHO nesse caso era só ruído; agora só avisa
+    que já tá na call (e se pausada, que tá pausada). Isso também substitui
+    o reset de `_modo_aprovadas` de 2026-08-27 (bug "/caos ignorar aprovadas
+    anteriores") - deixou de existir porque `/caos` não chega mais a mexer
+    numa sessão já ativa."""
+    guild_id = voice_channel.guild.id
+    sessao_existente = _sessoes_musica.get(guild_id)
+    if sessao_existente is not None:
+        aviso = "Já tô na call tocando música nesse servidor."
+        if sessao_existente._vc is not None and sessao_existente._vc.is_paused():
+            aviso += " Tá pausada agora - manda \"/musica continuar\" se quiser ouvir."
+        return False, aviso
     sessao, erro = await _obter_ou_criar_sessao(voice_channel, text_channel, discord_user_id)
     if sessao is None:
         return False, erro
@@ -788,9 +977,18 @@ async def sair_musica(guild_id):
     return "Parei e saí da call."
 
 
-def pular(guild_id):
+def pular(guild_id, text_channel=None):
+    """`text_channel` opcional (2026-08-30, mesmo achado do usuário sobre
+    `/caos`) - se passado, a próxima faixa (e qualquer anúncio futuro da
+    sessão) passa a seguir ESSE canal, não mais o de quando a sessão
+    nasceu. `/musica pular` é o jeito mais direto do usuário "realocar"
+    pra onde as próximas mensagens da sessão aparecem."""
     sessao = _sessoes_musica.get(guild_id)
-    return sessao.pular() if sessao else "Eu não tava tocando música nesse servidor."
+    if not sessao:
+        return "Eu não tava tocando música nesse servidor."
+    if text_channel is not None:
+        sessao.text_channel = text_channel
+    return sessao.pular()
 
 
 def pausar(guild_id):

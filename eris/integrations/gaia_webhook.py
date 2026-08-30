@@ -234,3 +234,21 @@ def pedir_voto_musica(discord_user_id, artista, titulo):
     GAIA estiver fora do ar - nunca bloqueia o anúncio por causa disso)."""
     resultado = _post("/eris/musica_voto", {"discord_user_id": str(discord_user_id), "artista": artista, "titulo": titulo})
     return (resultado or {}).get("voto")
+
+
+# --------------------------------------------------------------------------
+# Colecionador de Personagens - classe (2026-08-29, pedido do usuário: "o
+# ideal não é você fazer isso, é a gaia" - classificação é sempre em tempo
+# real, na 1ª reivindicação de cada personagem, nunca em lote)
+# --------------------------------------------------------------------------
+
+def pedir_ideia_lista_desejo():
+    """`/ideia` (2026-08-29, pedido do usuário: "tem como forcar isso com
+    /ideia?") - gera uma ideia de animação/reação nova da Lista de Desejo
+    NA HORA, fora do gatilho aleatório do lado da GAIA (`run.py::_monitorar_
+    lista_desejo_loop`). Devolve o texto, ou None se a GAIA estiver fora do
+    ar/não gerou nada."""
+    resultado = _post("/eris/lista_desejo_forcar", {})
+    if not resultado:
+        return None
+    return resultado.get("ideia")
