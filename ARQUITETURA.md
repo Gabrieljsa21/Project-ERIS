@@ -1625,56 +1625,89 @@ uma função compartilhada ANTES de corrigir o bug - corrigir só onde o
 bug foi reportado e deixar a 2ª cópia divergente é dívida técnica visível
 na hora, não só teórica.
 
-## Bandeja do sistema + inicialização escondida (2026-08-30)
+## Bandeja do sistema + inicialização escondida + watchdog (2026-08-30)
 
-Pedido do usuário: "n quero terminais abertos p cd bot online, oculta isso.
-Cria um icone na bandeja qq coisa." - até aqui, as 2 instâncias (completo/
-música) só existiam via `python -m eris.main`/`eris.main musica` digitado
-direto num terminal (ver README.md, "Uso standalone"), então cada uma vivia
-presa a uma janela de console aberta o tempo todo - fechar a janela por
-engano derrubava o bot, e não tinha jeito de fechar/reiniciar sem matar o
-processo via Gerenciador de Tarefas.
+Pedido original do usuário: "n quero terminais abertos p cd bot online,
+oculta isso. Cria um icone na bandeja qq coisa." - até aqui, as 2 instâncias
+(completo/música) só existiam via `python -m eris.main`/`eris.main musica`
+digitado direto num terminal (ver README.md, "Uso standalone"), então cada
+uma vivia presa a uma janela de console aberta o tempo todo - fechar a
+janela por engano derrubava o bot, e não tinha jeito de fechar/reiniciar sem
+matar o processo via Gerenciador de Tarefas.
 
-Resolvido com 2 peças, mesmo padrão já usado pela GAIA:
+**1ª versão (revertida no mesmo dia) dava 1 ícone de bandeja POR instância**
+(um círculo gerado em código, depois trocado pelo ícone oficial - Maçã
+Dourada da Discórdia) - usuário corrigiu: "Vc criou 2 eris, falei q era p
+criar apenas 1 contendo as 2". Perguntado se preferia fundir os 2 papéis num
+processo só (1 ícone de verdade) ou manter os 2 processos com só 1 ícone
+visível, o usuário trouxe um dado novo: "esse tanto de mudança na pandora q
+fizemos recentemente, o bot de musica ficava caindo direto. Quero evitar
+isso tbm" - fundir num processo só arriscaria derrubar o "completo" JUNTO
+numa queda do "musica" (justo o papel com histórico recente de
+instabilidade), então a solução final manteve o isolamento de processo e
+resolveu as 2 pontas (ícone único + música parar de cair sem se recuperar)
+separadamente:
 
-1. **`iniciar_eris.bat`/`iniciar_eris_oculto.vbs`** - o `.bat` sobe as 2
-   instâncias via `.venv\Scripts\pythonw.exe -m eris.main`/`... musica`
-   (`pythonw.exe`, não `python.exe` - sem console). O `.vbs` existe só pra
-   esconder o console do PRÓPRIO `.bat` (que aparece na hora de abrir, antes
-   de terminar de subir os 2 processos) - resolve o próprio caminho em tempo
-   de execução (`Scripting.FileSystemObject`), igual ao
-   `iniciar_galateia_oculto.vbs` da GAIA. `encerrar_eris.ps1` mata as 2
-   instâncias por `CommandLine` (filtra por `Project-ERIS`/`eris\.main`,
-   nunca por nome de processo sozinho - `python.exe`/`pythonw.exe` são nomes
-   genéricos demais pra confiar sem isso).
-2. **`eris/tray.py`** - ícone de bandeja PRÓPRIO por instância (`pystray` +
-   `Pillow`, gerado em código - um círculo dourado pro papel "completo"
-   (referência à Maçã Dourada da Discórdia do README) e roxo pro "música",
-   só pra diferenciar de relance), com menu "Ver logs" (abre o
-   `logs/AAAA-MM-DD.log` de hoje), "Reiniciar" e "Fechar". Roda numa THREAD
-   daemon separada do loop asyncio do bot (`pystray` no Windows só precisa
-   da própria mensagem de loop, não do event loop) - iniciado em
-   `eris/main.py::main()` logo antes do `asyncio.run(bot.iniciar_bot(...))`.
+1. **`eris/watchdog.py`** (novo) - mesmo padrão/motivo do watchdog da GAIA
+   (`Project G.A.I.A/assistant/scripts/watchdog.py`, recomendação de
+   HoppouAI/ProjectGabriel-Remastered): sobe `python -m eris.main [musica]`
+   como subprocesso, e se ele cair, reinicia sozinho com BACKOFF
+   EXPONENCIAL (5s → ×3 até 300s, resetado se ficou de pé mais de 60s antes
+   de cair) - ataca a raiz do "ficava caindo direto" independente de
+   qualquer ícone: antes, uma queda do papel música simplesmente tirava o
+   bot do ar até alguém notar e subir de novo na mão. Convenção de código de
+   saída IDÊNTICA à da GAIA de propósito (`EXIT_CODE_REINICIAR=42` reinicia
+   IMEDIATO sem esperar backoff, `EXIT_CODE_FECHAR=43` não reinicia,
+   qualquer outro código conta como crash). `eris/main.py` usa
+   `EXIT_CODE_FECHAR` (não um código genérico) nos 2 casos que NÃO são
+   crash de verdade - token ausente e instância duplicada detectada
+   (`_garantir_instancia_unica`) - sem isso, o watchdog entenderia esses
+   erros de configuração como falha transitória e tentaria de novo pra
+   sempre, perdendo a corrida da porta a cada tentativa.
+2. **`iniciar_eris.bat`/`iniciar_eris_oculto.vbs`** - o `.bat` agora sobe as
+   2 instâncias via `pythonw.exe -m eris.watchdog`/`... musica` (era `-m
+   eris.main` direto antes do watchdog existir) - `pythonw.exe`, não
+   `python.exe`, sem console; a saída do PRÓPRIO watchdog (não do ERIS, que
+   já se loga sozinho, ver `_RedirecionadorLog`) vai pra
+   `logs/watchdog_completo.log`/`logs/watchdog_musica.log`. O `.vbs` esconde
+   o console do PRÓPRIO `.bat` (mesmo padrão do `iniciar_galateia_oculto.vbs`
+   da GAIA). `encerrar_eris.ps1` mata por `CommandLine` (agora também casa
+   `eris\.watchdog`, além de `Project-ERIS`/`eris\.main`).
+3. **`eris/tray.py`** - **só o papel "completo" sobe um ícone de bandeja de
+   verdade** (ícone oficial do ERIS, Maçã Dourada da Discórdia,
+   `assets/icone_eris.png`); o "musica" sobe sem UI nenhuma, só um listener
+   de controle remoto (`PORTA_CONTROLE_MUSICA=8780`, TCP local, comando de
+   texto simples `FECHAR`/`REINICIAR` numa linha) que o menu do "completo"
+   usa - "Reiniciar música"/"Fechar música" conectam nessa porta e mandam o
+   comando; "Música: rodando/parada" no menu sonda
+   `PORTA_INSTANCIA_UNICA_MUSICA` (mesmo truque de bind-falha-significa-
+   ocupado já usado pra travar instância única, e pelo
+   `voz_local_supervisor.py` da GAIA). "Ver logs" do "completo" já cobre as
+   2 instâncias - `_RedirecionadorLog` (`eris/main.py`) escreve ambas no
+   MESMO `logs/AAAA-MM-DD.log`, não precisa de item separado.
 
-**Fechar/Reiniciar precisam encerrar o bot de verdade, não só a janela do
-ícone**: como o tray roda numa thread separada, `eris/tray.py` reaproveita o
-MESMO padrão já usado por `eris/api_bridge.py` pra falar com o loop do bot
-de fora dele - `bot.loop_atual()`/`bot.cliente_conectado()` +
+**Fechar/Reiniciar (local no "completo" OU remoto vindo de um comando pro
+"musica") precisam encerrar o bot de verdade, não só a UI**: `eris/tray.py`
+reaproveita o MESMO padrão já usado por `eris/api_bridge.py` pra falar com o
+loop do bot de fora dele - `bot.loop_atual()`/`bot.cliente_conectado()` +
 `asyncio.run_coroutine_threadsafe(client.close(), loop)` - fechar o client
-faz `asyncio.run(bot.iniciar_bot(...))` retornar sozinho e o processo
-terminar normal. Uma rede de segurança (`threading.Timer` de 5s ->
-`os._exit(0)`) força a saída mesmo assim se o bot ainda não tiver conectado
-(loop inexistente) ou o `close()` travar - o usuário clicou "Fechar", o
-processo tem que morrer de um jeito ou de outro. "Reiniciar" sobe um novo
-processo ANTES de fechar o atual (`subprocess.Popen([sys.executable, "-m",
-"eris.main", ...])` - `sys.executable` já é o `pythonw.exe` correto quando
-lançado escondido, então o reinício preserva o modo sem console sozinho),
-com o mesmo argumento de papel (`"musica"` ou nenhum).
+faz `asyncio.run(bot.iniciar_bot(...))` (`eris/main.py`) retornar sozinho.
+Uma função `_encerrar(icon, codigo)` unificada guarda o `codigo` desejado
+(`tray.codigo_saida()`) - `main()` sai do processo com ele DEPOIS do
+`asyncio.run` retornar, e é esse código que o watchdog externo usa pra
+decidir reiniciar ou não (ver item 1). Uma rede de segurança
+(`threading.Timer` de 5s → `os._exit(codigo)`, JÁ com o código certo) força
+a saída mesmo assim se o bot não tiver conectado ainda ou o `close()`
+travar. Diferente da 1ª versão, "Reiniciar" NÃO sobe mais um processo novo
+manualmente antes de fechar - com o watchdog de pé, só sair com
+`EXIT_CODE_REINICIAR` já é suficiente pra ele subir a substituição sozinho,
+imediatamente (sem esperar backoff).
 
 Dependência opcional em espírito, mas instalada por padrão
 (`pyproject.toml`) - se `pystray`/`Pillow` faltarem por algum motivo (venv
-quebrada, por exemplo), `iniciar_tray` só imprime um aviso no log e o bot
-segue rodando normal sem ícone, nunca derruba o processo por causa disso.
+quebrada, por exemplo), `tray.iniciar` só imprime um aviso no log e o bot
+segue rodando normal sem ícone (o listener de controle remoto da música
+independe dessas libs, continua funcionando).
 
 ## Pendências
 

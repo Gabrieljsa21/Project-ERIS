@@ -7,7 +7,7 @@
 # usuario que nao seja do ERIS. Mesmo padrao do encerrar_galateia.ps1 da
 # GAIA.
 
-$pattern = 'Project-ERIS|eris\.main'
+$pattern = 'Project-ERIS|eris\.main|eris\.watchdog'
 
 $targets = Get-CimInstance Win32_Process | Where-Object {
     ($_.Name -in @('python.exe', 'pythonw.exe')) -and $_.CommandLine -and ($_.CommandLine -match $pattern)

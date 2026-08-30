@@ -35,10 +35,10 @@ _ARQUIVO_ENV = ".env.musica" if PAPEL == "musica" else ".env"
 # em silêncio.
 load_dotenv(os.path.join(PASTA_PROJETO, _ARQUIVO_ENV), override=True)
 
-from eris import bot, db  # noqa: E402
+from eris import bot, db, tray  # noqa: E402
 from eris.api_bridge import iniciar_servidor_api  # noqa: E402
 from eris.config import PORTA_INSTANCIA_UNICA, PORTA_INSTANCIA_UNICA_MUSICA  # noqa: E402
-from eris.tray import iniciar_tray  # noqa: E402
+from eris.watchdog import EXIT_CODE_FECHAR  # noqa: E402
 
 _socket_instancia_unica = None
 
@@ -134,7 +134,12 @@ def _garantir_instancia_unica():
             f" [SISTEMA] Já existe uma instância do ERIS (papel \"{PAPEL}\") rodando "
             f"(porta {porta} ocupada) - encerrando esta pra não conectar o mesmo token duas vezes."
         )
-        sys.exit(1)
+        # 🔥 EXIT_CODE_FECHAR (não 1) - sob eris/watchdog.py (2026-08-30), um
+        # código de saída genérico faria o watchdog achar que foi um crash e
+        # tentar de novo pra sempre (com backoff), perdendo a corrida contra
+        # a instância real de novo a cada vez. Isso NÃO foi uma falha
+        # transitória - watchdog não deve reinicar.
+        sys.exit(EXIT_CODE_FECHAR)
 
 
 def _mostrar_versao_boot():
@@ -166,7 +171,10 @@ def main():
     token = os.getenv("DISCORD_BOT_TOKEN")
     if not token:
         print(f" [SISTEMA] DISCORD_BOT_TOKEN não configurado no {_ARQUIVO_ENV} - o ERIS não tem como conectar. Veja .env.example/.env.musica.example.")
-        sys.exit(1)
+        # 🔥 EXIT_CODE_FECHAR - mesmo motivo do _garantir_instancia_unica
+        # acima: token ausente é erro de configuração, não crash transitório;
+        # o watchdog não deve ficar tentando de novo pra sempre.
+        sys.exit(EXIT_CODE_FECHAR)
 
     if PAPEL == "completo":
         db.inicializar()
@@ -182,12 +190,19 @@ def main():
         print(" [SISTEMA] ERIS (papel música) pronto - conectando ao Discord...")
 
     # 🔥 Ícone de bandeja (2026-08-30) - o ERIS roda em produção via
-    # pythonw.exe (sem console, ver iniciar_eris.bat/iniciar_eris_oculto.vbs),
-    # então isso é o único jeito de ver que o processo tá de pé e de
-    # reiniciar/fechar sem precisar matar via Gerenciador de Tarefas.
-    iniciar_tray(PAPEL)
+    # pythonw.exe (sem console, ver iniciar_eris.bat/iniciar_eris_oculto.vbs).
+    # Só o papel "completo" mostra ícone de verdade (usuário: "falei q era p
+    # criar apenas 1 [icone] contendo as 2") - "musica" só sobe o listener de
+    # controle remoto que esse ícone usa pra Reiniciar/Fechar à distância,
+    # ver eris/tray.py.
+    tray.iniciar(PAPEL)
 
     asyncio.run(bot.iniciar_bot(token, papel=PAPEL))
+    # 🔥 `run()` só retorna depois de `client.close()` (pedido local pelo tray
+    # ou remoto via socket) - `tray.codigo_saida()` diz ao watchdog externo
+    # (`eris/watchdog.py`) se foi um pedido explícito (reiniciar/fechar) ou
+    # uma queda inesperada (0 == nenhum dos dois pediu, trata como crash).
+    sys.exit(tray.codigo_saida())
 
 
 if __name__ == "__main__":
