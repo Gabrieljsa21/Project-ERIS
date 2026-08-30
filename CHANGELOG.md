@@ -5,6 +5,9 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
 
 ## [Unreleased]
 
+### Adicionado
+- **Ícone de bandeja + inicialização escondida (2026-08-30, pedido do usuário: "n quero terminais abertos p cd bot online, oculta isso. Cria um icone na bandeja qq coisa")** - `iniciar_eris.bat`/`iniciar_eris_oculto.vbs` sobem as 2 instâncias (completo/música) via `pythonw.exe` (sem console, mesmo padrão da GAIA); `eris/tray.py` dá um ícone de bandeja por instância (`pystray`+`Pillow`) com "Ver logs"/"Reiniciar"/"Fechar". `encerrar_eris.ps1` como equivalente de emergência via CommandLine. Ver "Bandeja do sistema + inicialização escondida" em `ARQUITETURA.md`.
+
 ### Removido
 - **Colecionador de Personagens EXTRAÍDO pro [Project PANDORA](../Project-PANDORA) (2026-08-29)** - `eris/colecao/*` (~2.780 linhas: `gacha.py`/`paineis.py`/`consulta.py`/`economia.py`/`auto_colecionador.py`/`sincronizador.py`/`importar_get_waifu.py`) e as 14 tabelas `colecao_*` de `eris/db.py` (de 1.773 pra 219 linhas) foram removidos - o Colecionador já era a MAIORIA do peso do ERIS, e o usuário perguntou se valia separar num projeto próprio. Diferente do padrão de satélite HTTP (MOIRAI/ECHO) - REJEITADO de propósito, já que todo clique de roll/claim/troca cai no orçamento de 3s do Discord (2 bugs reais de timeout corrigidos nesta mesma sessão) - o PANDORA é uma BIBLIOTECA Python local (dependência de path via `uv`, `[tool.uv.sources]`), importada direto pelo `eris/bot.py`, zero round-trip de rede. Banco de dado migrado (`data/eris.db` -> `Project-PANDORA/data/pandora.db`, script `migrar_de_eris.py`, 30.965 personagens + todo o resto sem perda). Comandos/painéis (`/waifu`, `/colecao_admin`, etc.) continuam funcionando EXATAMENTE igual do ponto de vista de quem usa o Discord - só o código por trás mudou de repositório. Ver "Extraído pro Project PANDORA" em `ARQUITETURA.md`.
 

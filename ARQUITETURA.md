@@ -1625,6 +1625,57 @@ uma função compartilhada ANTES de corrigir o bug - corrigir só onde o
 bug foi reportado e deixar a 2ª cópia divergente é dívida técnica visível
 na hora, não só teórica.
 
+## Bandeja do sistema + inicialização escondida (2026-08-30)
+
+Pedido do usuário: "n quero terminais abertos p cd bot online, oculta isso.
+Cria um icone na bandeja qq coisa." - até aqui, as 2 instâncias (completo/
+música) só existiam via `python -m eris.main`/`eris.main musica` digitado
+direto num terminal (ver README.md, "Uso standalone"), então cada uma vivia
+presa a uma janela de console aberta o tempo todo - fechar a janela por
+engano derrubava o bot, e não tinha jeito de fechar/reiniciar sem matar o
+processo via Gerenciador de Tarefas.
+
+Resolvido com 2 peças, mesmo padrão já usado pela GAIA:
+
+1. **`iniciar_eris.bat`/`iniciar_eris_oculto.vbs`** - o `.bat` sobe as 2
+   instâncias via `.venv\Scripts\pythonw.exe -m eris.main`/`... musica`
+   (`pythonw.exe`, não `python.exe` - sem console). O `.vbs` existe só pra
+   esconder o console do PRÓPRIO `.bat` (que aparece na hora de abrir, antes
+   de terminar de subir os 2 processos) - resolve o próprio caminho em tempo
+   de execução (`Scripting.FileSystemObject`), igual ao
+   `iniciar_galateia_oculto.vbs` da GAIA. `encerrar_eris.ps1` mata as 2
+   instâncias por `CommandLine` (filtra por `Project-ERIS`/`eris\.main`,
+   nunca por nome de processo sozinho - `python.exe`/`pythonw.exe` são nomes
+   genéricos demais pra confiar sem isso).
+2. **`eris/tray.py`** - ícone de bandeja PRÓPRIO por instância (`pystray` +
+   `Pillow`, gerado em código - um círculo dourado pro papel "completo"
+   (referência à Maçã Dourada da Discórdia do README) e roxo pro "música",
+   só pra diferenciar de relance), com menu "Ver logs" (abre o
+   `logs/AAAA-MM-DD.log` de hoje), "Reiniciar" e "Fechar". Roda numa THREAD
+   daemon separada do loop asyncio do bot (`pystray` no Windows só precisa
+   da própria mensagem de loop, não do event loop) - iniciado em
+   `eris/main.py::main()` logo antes do `asyncio.run(bot.iniciar_bot(...))`.
+
+**Fechar/Reiniciar precisam encerrar o bot de verdade, não só a janela do
+ícone**: como o tray roda numa thread separada, `eris/tray.py` reaproveita o
+MESMO padrão já usado por `eris/api_bridge.py` pra falar com o loop do bot
+de fora dele - `bot.loop_atual()`/`bot.cliente_conectado()` +
+`asyncio.run_coroutine_threadsafe(client.close(), loop)` - fechar o client
+faz `asyncio.run(bot.iniciar_bot(...))` retornar sozinho e o processo
+terminar normal. Uma rede de segurança (`threading.Timer` de 5s ->
+`os._exit(0)`) força a saída mesmo assim se o bot ainda não tiver conectado
+(loop inexistente) ou o `close()` travar - o usuário clicou "Fechar", o
+processo tem que morrer de um jeito ou de outro. "Reiniciar" sobe um novo
+processo ANTES de fechar o atual (`subprocess.Popen([sys.executable, "-m",
+"eris.main", ...])` - `sys.executable` já é o `pythonw.exe` correto quando
+lançado escondido, então o reinício preserva o modo sem console sozinho),
+com o mesmo argumento de papel (`"musica"` ou nenhum).
+
+Dependência opcional em espírito, mas instalada por padrão
+(`pyproject.toml`) - se `pystray`/`Pillow` faltarem por algum motivo (venv
+quebrada, por exemplo), `iniciar_tray` só imprime um aviso no log e o bot
+segue rodando normal sem ícone, nunca derruba o processo por causa disso.
+
 ## Pendências
 
 - **Slash commands de ação via webhook** (`/abrir`, `/jornalista`, etc.) -

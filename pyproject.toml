@@ -13,6 +13,8 @@ dependencies = [
     "python-dotenv",
     "yt-dlp",
     "pandora",
+    "pystray>=0.19.5",
+    "pillow>=12.3.0",
 ]
 
 # 🔥 `pandora` (2026-08-29) - Colecionador (gacha estilo Mudae) EXTRAÍDO pra
