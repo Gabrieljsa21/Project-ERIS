@@ -32,6 +32,7 @@ import os
 import subprocess
 import sys
 import time
+from datetime import datetime
 
 EXIT_CODE_REINICIAR = 42
 EXIT_CODE_FECHAR = 43
@@ -53,13 +54,21 @@ def _papel_do_argv():
     return "musica" if len(sys.argv) > 1 and sys.argv[1].strip().lower() == "musica" else "completo"
 
 
+def _log(mensagem):
+    """Horário por linha (2026-09-02, pedido do usuário: "coloca horario tbm
+    no log" - sem isso não dava pra correlacionar uma queda registrada aqui
+    com o horário real de nada mais, nem cruzar com `logs/AAAA-MM-DD.log`
+    do próprio ERIS - `_RedirecionadorLog` ganhou o mesmo tratamento lá)."""
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {mensagem}")
+
+
 def supervisionar(papel, dormir=time.sleep):
     argv = [sys.executable, "-m", "eris.main"]
     if papel == "musica":
         argv.append("musica")
 
     backoff = BACKOFF_INICIAL_SEGUNDOS
-    print(f"[SISTEMA] Watchdog iniciado - supervisionando ERIS (papel \"{papel}\")")
+    _log(f"[SISTEMA] Watchdog iniciado - supervisionando ERIS (papel \"{papel}\")")
 
     while True:
         inicio = time.time()
@@ -69,20 +78,20 @@ def supervisionar(papel, dormir=time.sleep):
         )
         codigo = processo.wait()
         duracao = time.time() - inicio
-        print(f"[SISTEMA] ERIS (papel \"{papel}\") terminou (código {codigo}) depois de {duracao:.0f}s.")
+        _log(f"[SISTEMA] ERIS (papel \"{papel}\") terminou (código {codigo}) depois de {duracao:.0f}s.")
 
         if codigo == EXIT_CODE_FECHAR:
-            print("[SISTEMA] Fechamento pedido - watchdog encerrando.")
+            _log("[SISTEMA] Fechamento pedido - watchdog encerrando.")
             return
 
         if duracao >= DURACAO_MINIMA_PARA_RESETAR_BACKOFF_SEGUNDOS:
             backoff = BACKOFF_INICIAL_SEGUNDOS
 
         if codigo == EXIT_CODE_REINICIAR:
-            print("[SISTEMA] Reinício pedido - subindo de novo agora (sem esperar backoff).")
+            _log("[SISTEMA] Reinício pedido - subindo de novo agora (sem esperar backoff).")
             continue
 
-        print(f"[SISTEMA] Saída inesperada - reiniciando em {backoff}s (backoff exponencial)...")
+        _log(f"[SISTEMA] Saída inesperada - reiniciando em {backoff}s (backoff exponencial)...")
         dormir(backoff)
         backoff = min(backoff * BACKOFF_MULTIPLICADOR, BACKOFF_MAXIMO_SEGUNDOS)
 

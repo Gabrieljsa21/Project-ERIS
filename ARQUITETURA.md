@@ -1709,6 +1709,89 @@ quebrada, por exemplo), `tray.iniciar` só imprime um aviso no log e o bot
 segue rodando normal sem ícone (o listener de controle remoto da música
 independe dessas libs, continua funcionando).
 
+## Diagnóstico de saída silenciosa + horário nos logs (2026-09-02)
+
+Achado real: os 2 `eris.watchdog` morreram de vez num dia (nenhum dos 2
+supervisores vivo, "completo" fora do ar, "música" tocando órfão sem rede
+de segurança) - restaurado via `encerrar_eris.ps1` + `iniciar_eris.bat`.
+Investigando o motivo de "completo" ter caído 4x sozinho antes disso
+(sempre código 15, que não é nenhum dos 2 códigos intencionais do projeto,
+42/43) - sem NENHUM rastro: nem traceback em `logs/AAAA-MM-DD.log`, nem
+crash reportado no Event Viewer do Windows. Isso descarta uma exceção
+Python normal (teria log) e um crash nativo relatado pelo Windows (teria
+evento) - sobra "algo terminou o processo sem Python conseguir reagir".
+
+- **Horário por linha** (pedido do usuário: "coloca horario tbm no log" -
+  sem isso não dava pra correlacionar as quedas com nada) -
+  `eris/main.py::_RedirecionadorLog._com_horario` prefixa `[HH:MM:SS]` no
+  INÍCIO de cada linha nova (nunca no meio de um `print()` picado em várias
+  chamadas de `write()` - rastreado via flag `_inicio_de_linha`,
+  `linha.endswith("\n")` decide se a próxima escrita começa linha nova).
+  `eris/watchdog.py` ganhou o mesmo tratamento (`_log()`, novo).
+- **3 camadas de diagnóstico** (`eris/main.py::_ativar_diagnostico_de_saida`,
+  chamado logo depois de `_ativar_log_em_disco` - precisa que `sys.stderr`
+  já esteja redirecionado):
+  1. `sys.excepthook` - exceção não tratada na thread PRINCIPAL, com
+     marcador bem visível no log ("EXCEÇÃO NÃO TRATADA").
+  2. `threading.excepthook` - mesma coisa pras threads de FUNDO (ícone da
+     bandeja `pystray`, ponte HTTP `api_bridge`) - por padrão isso vai só
+     pro handler de log de última instância do Python, fácil de se perder.
+  3. `faulthandler.enable(file=sys.stderr, all_threads=True)` - a camada
+     que interessa pro caso do código 15: captura crash NATIVO (access
+     violation/segfault, inclusive de dentro de extensão C como
+     `discord.opus`/PyNaCl/`pystray`) e despeja a pilha de TODAS as
+     threads antes do processo morrer - o único jeito de pegar algo que
+     nem chega a passar pelo `sys.excepthook` normal.
+  Também um log explícito bem antes do `sys.exit(tray.codigo_saida())` no
+  fim de `main()` - se o processo morrer por OUTRO caminho, essa linha
+  simplesmente não aparece, o que já é diagnóstico por exclusão.
+- **Ainda não validado ao vivo** - as mudanças exigem uma queda de verdade
+  pra provar que capturam algo; só testei a lógica de timestamp isolada
+  (sem importar `eris.main` de verdade, que abre conexão/token).
+
+## Migração do Colecionador nunca rodava em produção (2026-09-02)
+
+Causa raiz achada depois de 2 incidentes ao vivo no mesmo dia (Séries
+Favoritas - `colecao_series_favoritas_bonus` não existia - e depois a
+coluna `cooldown_batalha_ativo`, ambas sumindo mesmo com `pandora/db.py`
+já atualizado e o boot terminando sem erro nenhum). As 2 primeiras
+tentativas de diagnóstico (contar tabelas, depois investigar venv/
+bytecode/race condition) estavam rastreando o sintoma errado - a causa é
+bem mais simples e some qualquer dúvida:
+
+**`main()` só chamava `db.inicializar()` - e esse `db` é `eris.db`** (`from
+eris import bot, db, tray`, topo do arquivo), o núcleo PEQUENO do PRÓPRIO
+ERIS (donos/roteamento/auditoria/cache de guilds, ~219 linhas depois da
+extração do Colecionador em 2026-08-29) - **sem relação nenhuma** com o
+schema do Colecionador. `colecao_db.inicializar()` (a migração de
+verdade, `pandora.db`, mesmo alias usado em `eris/bot.py`: `from pandora
+import db as colecao_db`) **nunca foi chamada em lugar nenhum do boot do
+ERIS**. O schema do Colecionador só existia em produção porque o script
+de migração ONE-SHOT da extração (`migrar_de_eris.py`, 2026-08-29) rodou
+`pandora.db.inicializar()` uma única vez - toda mudança de schema feita
+NO PANDORA depois disso (World Boss/Perfil/Séries Favoritas/Merge/cooldown
+de Batalha, todas de hoje) nunca foi aplicada automaticamente; só existia
+quando EU rodava a migração manualmente pra investigar cada incidente,
+mascarando o problema real a cada vez.
+
+Corrigido:
+- `eris/main.py` importa `pandora.db as colecao_db` (novo) e `main()`
+  chama `colecao_db.inicializar()` de verdade, junto do `db.inicializar()`
+  original (que continua válido - `eris.db` tem seu próprio schema
+  pequeno, não foi tocado).
+- `_verificar_migracao_completa()` (nova, chamada logo depois) - rede de
+  segurança: confere as colunas de `colecao_db._NOVAS_COLUNAS_CONFIG_
+  COLECAO` de verdade + as tabelas de Séries Favoritas; se algo faltar
+  (não deveria mais faltar nada, mas "não confiar cegamente que rodou sem
+  erro = aplicou" depois desse achado), tenta `colecao_db.inicializar()`
+  de novo antes de só logar o alerta.
+- **Validado**: simulei um schema propositalmente desatualizado (removi a
+  tabela + renomeei/recriei a coluna faltando) numa cópia do banco real,
+  rodei o boot corrigido e confirmei que `colecao_db.inicializar()` já
+  resolve tudo sozinho, com `_verificar_migracao_completa` confirmando
+  "nada faltando" depois. Nunca testado no boot real do Discord ainda -
+  próximo restart de produção é a validação final.
+
 ## Pendências
 
 - **Slash commands de ação via webhook** (`/abrir`, `/jornalista`, etc.) -

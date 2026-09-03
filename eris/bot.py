@@ -23,7 +23,7 @@ from eris import db
 # sendo o `eris.db` de sempre - donos/roteamento/auditoria/cache de guilds,
 # ver `db.salvar_guilds_cache` mais abaixo) - dois bancos SQLite distintos
 # agora (`data/eris.db` e `Project-PANDORA/data/pandora.db`), nunca confundir.
-from pandora import auto_colecionador, consulta, economia, gacha, paineis, sincronizador
+from pandora import auto_colecionador, consulta, economia, gacha, paineis, sincronizador, worldboss
 from pandora import db as colecao_db
 from eris.core import mensagens, moderacao, musica, seguranca, voz_call
 from eris.integrations import gaia_webhook
@@ -52,6 +52,8 @@ _slash_ja_sincronizado = False
 _auto_colecionador = None
 _auto_colecionador_usuarios = None
 _sincronizador_catalogo = None
+_scheduler_worldboss = None
+_scheduler_batalha = None
 
 
 def cliente_conectado():
@@ -556,7 +558,7 @@ def _registrar_slash_musica(tree):
     grupo_musica_admin = app_commands.Group(name="musica_admin", description="Configuração do Modo Música nesse servidor")
 
     async def _somente_admin_do_servidor_musica(interaction: discord.Interaction):
-        """Mesma régua de `/colecao_admin` (permissão de administrador NAQUELE
+        """Mesma régua de `/pandora_admin` (permissão de administrador NAQUELE
         servidor, não `_somente_dono` - conteúdo/config do jogo varia por
         servidor) - repetida aqui (não importada de `_registrar_slash_colecao`)
         porque só a instância "musica" registra `/musica_admin` (papel
@@ -643,14 +645,16 @@ def _registrar_slash_colecao(tree):
     async def _ma(interaction: discord.Interaction, quantidade: _RangeQuantidade = 0):
         await _rolar_e_responder(interaction, "ma", quantidade)
 
-    @app_commands.command(name="waifu", description="Abre o painel do Colecionador (rolar, coleção e mais)")
-    async def _waifu(interaction: discord.Interaction):
+    @app_commands.command(name="pandora", description="Abre o painel do Colecionador (rolar, coleção e mais)")
+    async def _pandora(interaction: discord.Interaction):
         """Painel-raiz (2026-08-29, pedido do usuário: "os bots estão
         ficando muito poluídos"/"e se fizermos um painel com botões, assim
         como foi feito com o legends awaken?") - Fase 1 (ver plano da
         sessão que criou isto): só Rolar/Coleção por enquanto, os comandos
         antigos equivalentes continuam existindo até cada botão ser
-        validado ao vivo. Lógica de verdade em `eris/colecao/paineis.py`."""
+        validado ao vivo. Lógica de verdade em `eris/colecao/paineis.py`.
+        🔥 Renomeado de `/waifu` pra `/pandora` (2026-09-02, pedido do
+        usuário)."""
         if interaction.guild is None:
             await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
             return
@@ -791,10 +795,11 @@ def _registrar_slash_colecao(tree):
         personagens = colecao_db.wishlist_listar(interaction.guild.id, interaction.user.id)
         await interaction.response.send_message(consulta.formatar_wishlist(personagens), ephemeral=True)
 
-    grupo_admin = app_commands.Group(name="colecao_admin", description="Configuração do colecionador nesse servidor")
+    grupo_admin = app_commands.Group(name="pandora_admin", description="Configuração do colecionador nesse servidor")
 
     async def _somente_admin_do_servidor_colecao(interaction: discord.Interaction):
-        """Mesma régua de `/colecao_admin nsfw` original, agora compartilhada
+        """Mesma régua de `/pandora_admin nsfw` original (renomeado de
+        `/colecao_admin` em 2026-09-02), agora compartilhada
         por todos os subcomandos de configuração - permissão de administrador
         NAQUELE servidor (não `_somente_dono`, que é dono da Galateia; aqui é
         conteúdo/dificuldade do jogo, faz sentido variar por servidor)."""
@@ -848,6 +853,14 @@ def _registrar_slash_colecao(tree):
             return
         colecao_db.definir_configuracao_colecao(interaction.guild.id, "chance_wish_roll", porcentagem / 100)
         await interaction.response.send_message(f"Chance de wish-roll ajustada pra {porcentagem}%.", ephemeral=True)
+
+    @grupo_admin.command(name="cooldown_batalha", description="Liga/desliga o cooldown de 24h entre desafios de Batalha ao MESMO jogador (desligado por padrão)")
+    async def _admin_cooldown_batalha(interaction: discord.Interaction, ativo: bool):
+        if not await _somente_admin_do_servidor_colecao(interaction):
+            return
+        colecao_db.definir_configuracao_colecao(interaction.guild.id, "cooldown_batalha_ativo", 1 if ativo else 0)
+        estado = "ativado" if ativo else "desativado"
+        await interaction.response.send_message(f"Cooldown de 24h entre desafios ao mesmo jogador {estado} nesse servidor.", ephemeral=True)
 
     @grupo_admin.command(name="canal", description="Define o canal onde o auto-colecionador (GAIA/ERIS) posta os próprios rolls")
     async def _admin_canal(interaction: discord.Interaction, canal: discord.TextChannel):
@@ -1058,8 +1071,8 @@ def _registrar_slash_colecao(tree):
             await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
             return
         # 🔥 Regras de verdade vivem em `economia.executar_merge` (2026-08-29)
-        # - compartilhado com o botão 🔀 Merge do painel `/waifu` (`👤
-        # Perfil`), pra nunca duplicar essa validação em 2 lugares.
+        # - compartilhado com o botão 🔀 Merge do painel `/pandora`, pra
+        # nunca duplicar essa validação em 2 lugares.
         ok, mensagem, precisa_confirmar = economia.executar_merge(
             interaction.guild.id, interaction.user.id, [id1, id2, id3, id4, id5], confirmar,
         )
@@ -1079,8 +1092,8 @@ def _registrar_slash_colecao(tree):
             await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
             return
         # 🔥 Regras de verdade vivem em `economia.criar_e_avaliar_troca`
-        # (2026-08-29) - compartilhado com o botão 🔄 Trocar do painel
-        # `/waifu`, pra nunca duplicar essa lógica em 2 lugares.
+        # (2026-08-29) - compartilhado com o botão 🔄 Trocas do painel
+        # `/pandora`, pra nunca duplicar essa lógica em 2 lugares.
         status, mensagem, view = economia.criar_e_avaliar_troca(
             interaction.guild.id, interaction.user.id, membro,
             economia.parse_ids_personagens(oferecer_personagens), oferecer_wishards,
@@ -1097,7 +1110,7 @@ def _registrar_slash_colecao(tree):
     tree.add_command(_wa)
     tree.add_command(_ha)
     tree.add_command(_ma)
-    tree.add_command(_waifu)
+    tree.add_command(_pandora)
     tree.add_command(_colecao)
     tree.add_command(_carteira)
     tree.add_command(_personagem)
@@ -1200,7 +1213,7 @@ async def iniciar_bot(token, papel="completo"):
 
     @client.event
     async def on_ready():
-        global _client_atual, _slash_ja_sincronizado, _auto_colecionador, _auto_colecionador_usuarios, _sincronizador_catalogo
+        global _client_atual, _slash_ja_sincronizado, _auto_colecionador, _auto_colecionador_usuarios, _sincronizador_catalogo, _scheduler_worldboss, _scheduler_batalha
         _client_atual = client
         mensagens.definir_client(client)
         print(f" [ERIS] Bot conectado como {client.user} (papel \"{papel}\").")
@@ -1220,6 +1233,18 @@ async def iniciar_bot(token, papel="completo"):
         # à toa (upsert já deixaria seguro, mas sem ganho nenhum).
         if completo and _sincronizador_catalogo is None:
             _sincronizador_catalogo = sincronizador.SincronizadorCatalogo(client)
+        # 🔥 World Boss (2026-09-01) - só na instância "completo" (mesmo
+        # critério de `AutoColecionadorUsuarios` - é onde vive o painel
+        # `/pandora` -> 🐉 World Boss); spawna nos 4 horários fixos e conduz
+        # inscrições/turnos sozinho, sem depender de nenhum comando.
+        if completo and _scheduler_worldboss is None:
+            _scheduler_worldboss = worldboss.SchedulerWorldBoss(client)
+        # 🔥 Auto-Defesa de Batalha por timeout (2026-09-02, pedido do
+        # usuário: "Se o desafiado n responder em 10min, considera essa
+        # defesa automatica") - só na instância "completo" (mesmo critério
+        # dos outros schedulers - é onde vive o hub "⚔️ PvP").
+        if completo and _scheduler_batalha is None:
+            _scheduler_batalha = paineis.SchedulerBatalha(client)
         if not _slash_ja_sincronizado:
             try:
                 sincronizados = await tree.sync()
