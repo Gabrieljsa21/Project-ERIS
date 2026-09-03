@@ -8,12 +8,14 @@ GAIA estiver fechada - só a conversa/comandos que dependem de conteúdo
 ficam indisponíveis nesse caso (ver `eris/bot.py`)."""
 import asyncio
 import datetime
+import faulthandler
 import logging
 import os
 import socket
 import subprocess
 import sys
 import threading
+import traceback
 
 from dotenv import load_dotenv
 
@@ -37,10 +39,17 @@ load_dotenv(os.path.join(PASTA_PROJETO, _ARQUIVO_ENV), override=True)
 
 from eris import bot, db, tray  # noqa: E402
 from eris.api_bridge import iniciar_servidor_api  # noqa: E402
+from pandora import db as colecao_db  # noqa: E402 - mesmo alias de `eris/bot.py`
 from eris.config import PORTA_INSTANCIA_UNICA, PORTA_INSTANCIA_UNICA_MUSICA  # noqa: E402
 from eris.watchdog import EXIT_CODE_FECHAR  # noqa: E402
 
 _socket_instancia_unica = None
+# 🔥 Referência global (2026-09-02) - `faulthandler.enable()` guarda o
+# DESCRITOR de arquivo internamente (nível de C), mas o objeto Python
+# precisa continuar vivo (senão o GC fecha o arquivo e o descritor vira
+# inválido) - nunca reatribuído, só existe pra não deixar isso cair fora
+# de escopo.
+_arquivo_faulthandler = None
 
 
 class _RedirecionadorLog:
@@ -57,6 +66,13 @@ class _RedirecionadorLog:
         self._stream_original = stream_original
         self._arquivo = None
         self._data_arquivo = None
+        # 🔥 Horário por linha (2026-09-02, pedido do usuário depois de tentar
+        # investigar uma queda do papel "completo" sem conseguir correlacionar
+        # nada no log com o horário real - "coloca horario tbm no log") - só
+        # no INÍCIO de cada linha nova, nunca no meio de um `print()` picado em
+        # várias chamadas de `write()` (`sep`/`end` do print sempre viram
+        # `write()`s separados).
+        self._inicio_de_linha = True
 
     def _garantir_arquivo(self):
         hoje = datetime.date.today().isoformat()
@@ -75,6 +91,17 @@ class _RedirecionadorLog:
         except Exception:
             self._arquivo = None
 
+    def _com_horario(self, texto):
+        if not texto:
+            return texto
+        partes = []
+        for linha in texto.splitlines(keepends=True):
+            if self._inicio_de_linha:
+                partes.append(f"[{datetime.datetime.now().strftime('%H:%M:%S')}]")
+            partes.append(linha)
+            self._inicio_de_linha = linha.endswith("\n")
+        return "".join(partes)
+
     def write(self, texto):
         if self._stream_original:
             try:
@@ -84,7 +111,7 @@ class _RedirecionadorLog:
         self._garantir_arquivo()
         if self._arquivo:
             try:
-                self._arquivo.write(texto)
+                self._arquivo.write(self._com_horario(texto))
                 self._arquivo.flush()
             except Exception:
                 pass
@@ -101,6 +128,56 @@ class _RedirecionadorLog:
 def _ativar_log_em_disco():
     sys.stdout = _RedirecionadorLog(sys.stdout)
     sys.stderr = _RedirecionadorLog(sys.stderr)
+
+
+def _ativar_diagnostico_de_saida():
+    """2026-09-02, pedido do usuário depois de investigar uma queda do
+    papel "completo" (código 15) sem achar NENHUM rastro - nem traceback
+    no log, nem crash reportado no Event Viewer do Windows. Isso descarta
+    uma exceção Python normal (teria log) e um crash nativo relatado pelo
+    próprio Windows (teria evento) - sobra "algo terminou o processo sem
+    Python conseguir reagir" (crash nativo silencioso numa lib com
+    extensão C - `discord.opus`/PyNaCl/`pystray`- ou término externo).
+    3 camadas, cada uma cobrindo um tipo de silêncio diferente:
+
+    1. `sys.excepthook` - exceção não tratada na THREAD PRINCIPAL. Python
+       já imprime isso sozinho, mas fica bem mais fácil de achar no log
+       gigante com um marcador ÓBVIO ("EXCEÇÃO NÃO TRATADA").
+    2. `threading.excepthook` - mesma coisa, mas pras threads de fundo
+       (ícone da bandeja `pystray`, ponte HTTP `api_bridge`) - por padrão
+       o Python só manda isso pro handler de log de última instância, fácil
+       de se perder no meio do resto.
+    3. `faulthandler` - a camada que interessa de verdade pro caso do
+       código 15: registra um handler de baixo nível pra sinais FATAIS
+       (access violation/segfault, inclusive de dentro de extensões C como
+       `discord.opus`/PyNaCl) e despeja a pilha de TODAS as threads num
+       arquivo antes do processo morrer - o único jeito de capturar algo
+       que nem chega a passar pelo `sys.excepthook` normal do Python.
+       🔥 PRECISA de um arquivo de verdade (`fileno()` de baixo nível - é
+       um handler de SINAL, não roda em contexto Python normal) - o
+       `_RedirecionadorLog`/`sys.stderr` NÃO serve (achado ao vivo:
+       `AttributeError: '_RedirecionadorLog' object has no attribute
+       'fileno'`, travava o boot inteiro num loop de crash) - abre um
+       arquivo PRÓPRIO (`logs/crash_<papel>.log`), fora do redirecionador."""
+    def _excecao_nao_tratada(tipo, valor, tb):
+        print(" [SISTEMA] !!! EXCEÇÃO NÃO TRATADA (thread principal) !!!")
+        traceback.print_exception(tipo, valor, tb)
+
+    def _excecao_thread(args):
+        print(f" [SISTEMA] !!! EXCEÇÃO NÃO TRATADA (thread \"{args.thread.name}\") !!!")
+        traceback.print_exception(args.exc_type, args.exc_value, args.exc_traceback)
+
+    sys.excepthook = _excecao_nao_tratada
+    threading.excepthook = _excecao_thread
+
+    global _arquivo_faulthandler
+    try:
+        pasta_logs = os.path.join(PASTA_PROJETO, "logs")
+        os.makedirs(pasta_logs, exist_ok=True)
+        _arquivo_faulthandler = open(os.path.join(pasta_logs, f"crash_{PAPEL}.log"), "a", encoding="utf-8")
+        faulthandler.enable(file=_arquivo_faulthandler, all_threads=True)
+    except Exception:
+        print(" [SISTEMA] faulthandler não pôde ser ativado (não é crítico, resto do diagnóstico continua valendo).")
 
 
 def _ativar_log_debug_voice_recv():
@@ -142,6 +219,54 @@ def _garantir_instancia_unica():
         sys.exit(EXIT_CODE_FECHAR)
 
 
+def _verificar_migracao_completa():
+    """🔥 CAUSA RAIZ ACHADA (2026-09-02) - `colecao_series_favoritas_bonus`
+    e depois a coluna `cooldown_batalha_ativo` não existiam em produção
+    mesmo com `_SCHEMA` do PANDORA já atualizado. Rastreei por 2 achados ao
+    vivo achando que era caching de bytecode/venv/race condition - a causa
+    real é muito mais simples: **`colecao_db.inicializar()` (a migração de
+    verdade do Colecionador, `pandora.db`) NUNCA foi chamada em lugar
+    nenhum do boot do ERIS**. `main()` só chamava `db.inicializar()` (o
+    `db` IMPORTADO NO TOPO DESTE ARQUIVO É `eris.db`, o núcleo pequeno do
+    PRÓPRIO ERIS - donos/roteamento/auditoria - não tem nenhuma relação com
+    o Colecionador) - nome igual, banco/schema completamente diferentes. O
+    schema do Colecionador só existia porque o script de migração
+    ONE-SHOT da extração (2026-08-29, `migrar_de_eris.py`) rodou
+    `pandora.db.inicializar()` UMA VEZ; nenhuma mudança de schema feita
+    DEPOIS disso (World Boss/Séries Favoritas/cooldown de Batalha, todas
+    de hoje) nunca foi aplicada automaticamente - só quando eu rodava a
+    migração manualmente pra investigar. Corrigido: `main()` agora chama
+    `colecao_db.inicializar()` (import novo, mesmo alias de `eris/bot.py`)
+    de verdade. Esta função continua existindo como VERIFICAÇÃO/rede de
+    segurança (não confiar cegamente que "rodou sem erro" = "aplicou")."""
+    def _faltando():
+        faltando = []
+        with colecao_db.conexao() as conn:
+            colunas_config = {r["name"] for r in conn.execute("PRAGMA table_info(colecao_configuracao_guild)")}
+            for coluna in colecao_db._NOVAS_COLUNAS_CONFIG_COLECAO:
+                if coluna not in colunas_config:
+                    faltando.append(f"coluna colecao_configuracao_guild.{coluna}")
+            tabelas = {r["name"] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            for tabela in ("colecao_series_favoritas", "colecao_series_favoritas_bonus"):
+                if tabela not in tabelas:
+                    faltando.append(f"tabela {tabela}")
+        return faltando
+
+    try:
+        faltando = _faltando()
+        if faltando:
+            print(f" [SISTEMA] !!! MIGRAÇÃO DO COLECIONADOR INCOMPLETA - faltando: {', '.join(faltando)} - tentando rodar colecao_db.inicializar() de novo...")
+            colecao_db.inicializar()
+            faltando = _faltando()
+        if faltando:
+            print(f" [SISTEMA] !!! MIGRAÇÃO DO COLECIONADOR AINDA INCOMPLETA depois de 2 tentativas - faltando: {', '.join(faltando)} - precisa de investigação manual.")
+        else:
+            print(" [SISTEMA] Migração do Colecionador (pandora.db) verificada - nada faltando.")
+    except Exception:
+        print(" [SISTEMA] Não consegui verificar a migração (não é crítico, mas fica sem essa checagem dessa vez).")
+        traceback.print_exc()
+
+
 def _mostrar_versao_boot():
     """Mesmo raciocínio do `run.py` da GAIA (2026-08-25) - Python nunca
     recarrega código sozinho, então um ERIS de pé pode estar rodando uma
@@ -164,6 +289,7 @@ def _mostrar_versao_boot():
 
 def main():
     _ativar_log_em_disco()
+    _ativar_diagnostico_de_saida()
     _ativar_log_debug_voice_recv()
     _garantir_instancia_unica()
     _mostrar_versao_boot()
@@ -178,6 +304,15 @@ def main():
 
     if PAPEL == "completo":
         db.inicializar()
+        # 🔥 `colecao_db.inicializar()` (2026-09-02, correção de causa raiz -
+        # ver docstring de `_verificar_migracao_completa`) - NUNCA era
+        # chamado antes; só o `db.inicializar()` acima (que é `eris.db`, o
+        # núcleo pequeno do PRÓPRIO ERIS, sem nenhuma relação com o schema
+        # do Colecionador/PANDORA) rodava. Toda mudança de schema do
+        # Colecionador feita depois da extração (2026-08-29) nunca tinha
+        # sido aplicada automaticamente em produção até agora.
+        colecao_db.inicializar()
+        _verificar_migracao_completa()
         ids_bootstrap = [i.strip() for i in os.getenv("DISCORD_OWNER_IDS", "").split(",") if i.strip()]
         db.importar_donos_bootstrap(ids_bootstrap)
         threading.Thread(target=iniciar_servidor_api, args=(token,), daemon=True).start()
@@ -202,7 +337,14 @@ def main():
     # ou remoto via socket) - `tray.codigo_saida()` diz ao watchdog externo
     # (`eris/watchdog.py`) se foi um pedido explícito (reiniciar/fechar) ou
     # uma queda inesperada (0 == nenhum dos dois pediu, trata como crash).
-    sys.exit(tray.codigo_saida())
+    # 🔥 Log explícito ANTES de sair (2026-09-02) - se o processo morrer por
+    # OUTRO caminho que não seja `run()` retornar aqui (crash nativo, término
+    # externo), essa linha simplesmente não vai aparecer - o que já é um
+    # diagnóstico útil por exclusão (compara com o horário do log de
+    # `watchdog_completo.log`/`watchdog_musica.log`).
+    codigo = tray.codigo_saida()
+    print(f" [SISTEMA] Encerrando de propósito (client.close() retornou) - código de saída {codigo}.")
+    sys.exit(codigo)
 
 
 if __name__ == "__main__":

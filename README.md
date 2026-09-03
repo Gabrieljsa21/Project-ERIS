@@ -160,19 +160,19 @@ mesmo dia)** - biblioteca Python local (não satélite HTTP, ver
 Os comandos/painéis abaixo continuam funcionando EXATAMENTE igual do ponto
 de vista de quem usa o Discord - só o código por trás mudou de repositório.
 
-🔥 **`/waifu` (2026-08-29)** - painel-raiz com botões, pensado pra reduzir a
+🔥 **`/pandora` (2026-08-29, renomeado de `/waifu` em 2026-09-02)** - painel-raiz com botões, pensado pra reduzir a
 poluição de comando (chegou a 25 raiz no seletor `/`), inspirado no
 LegendsAwaken (bot próprio do usuário, C#/Discord.Net - 1 comando por
 sistema, navegação por botão em vez de subcomando). Cobre **🎲 Rolar, 📚
 Coleção** (select Minha coleção/🔥 Populares/🎯 Disponíveis pra pegar), **👤
 Perfil** (carteira+ranking+favoritas, com Favoritar/Divorciar/Merge), **⭐
 Wishlist** (paginada, Modal de adicionar), **👥 Party** (só por botão, sem
-comando `/party`), **🛒 Loja**, **🔄 Trocar** (UserSelect + Modal) e **🏆
+comando `/party`), **🛒 Loja**, **🔄 Trocas** (UserSelect + Modal) e **🏆
 Ranking**. Os comandos abaixo (`/colecao`, `/carteira`, `/ranking`,
 `/favoritar`, `/divorciar`, `/merge`, `/wishlist`, `/party`, `/loja`,
 `/trocar`, `/populares`, `/colecao_disponiveis`) continuam existindo até
 cada botão equivalente ser validado clicando de verdade no Discord. Ver
-"Painel `/waifu`" em `ARQUITETURA.md` pro detalhe completo.
+"Painel `/pandora`" em `ARQUITETURA.md` pro detalhe completo.
 
 `/wa` (feminino anime/mangá), `/ha` (masculino), `/ma` (qualquer gênero) -
 rola personagem(ns) do catálogo (30.965 personagens importados do
@@ -235,11 +235,11 @@ confirmação, nunca bloqueia de vez). `/party ver`/`definir`/`remover`/
 protegida contra Merge - nunca é possível sacrificar quem está lá).
 `/vitrine` é a mesma mecânica, só como mostruário público. Afinidade 10
 NÃO vira Soulmate sozinha mais (2026-08-29) - habilita o botão "💞 Prova de
-Soulmate" no painel `/waifu` -> Perfil, uma tentativa (1x/hora por
+Soulmate" no painel `/pandora` -> Perfil, uma tentativa (1x/hora por
 personagem) com chance por raridade que cresce a cada falha até garantir;
 só depois de VENCER a personagem ganha o marcador 💞 de verdade.
 
-Toda a dificuldade é configurável por servidor via `/colecao_admin`
+Toda a dificuldade é configurável por servidor via `/pandora_admin`
 (precisa ser administrador do servidor) - `nsfw <true/false>` (vem ligado
 por padrão), `rolls <quantidade> <minutos>`, `claims <quantidade>
 <minutos>`, `duracao_card <segundos>`, `max_puxada <quantidade>`,
@@ -260,7 +260,7 @@ mensagem individual + reação por personagem, mais a mensagem combinada com
 botão de Reivindicar) e às XX:10 fica com
 a mais POPULAR entre as que sobraram sem dono; ERIS (papel "musica") faz o
 mesmo às XX:30/XX:35. Não usa cooldown nem conta com `max_puxada` (número
-sempre fixo em 50). Rola no canal configurado em `/colecao_admin canal`
+sempre fixo em 50). Rola no canal configurado em `/pandora_admin canal`
 (ou no canal padrão do servidor, se nenhum foi definido). Personagens de
 uma conta de bot também entram no jogo normal -
 podem ser roladas por humanos ("de terceiro"), reivindicadas de volta se
