@@ -31,9 +31,9 @@ PORTA_INSTANCIA_UNICA_MUSICA = 8779
 
 # 🔥 Porta de controle remoto do papel "musica" (2026-08-30, pedido do
 # usuário: "falei q era p criar apenas 1 [icone]... o bot de musica ficava
-# caindo direto" - só o papel "completo" mostra ícone de bandeja agora, ver
+# caindo direto" - só o papel "principal" mostra ícone de bandeja agora, ver
 # `eris/tray.py`) - "musica" escuta aqui por comandos texto simples
-# (FECHAR/REINICIAR) mandados pelo tray do "completo", já que os 2 continuam
+# (FECHAR/REINICIAR) mandados pelo tray do "principal", já que os 2 continuam
 # processos separados (crash de um não derruba o outro - histórico real de
 # instabilidade do papel música durante a extração do Colecionador pro
 # Project PANDORA).

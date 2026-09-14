@@ -103,29 +103,54 @@ def _titulo_com_link(faixa):
     return f"**{faixa['titulo']}**"
 
 
-def _arquivo_fila_sessao(guild_id):
-    return os.path.join(_PASTA_SESSOES_PERSISTIDAS, f"fila_sessao_{guild_id}.json")
+def _arquivo_estado_sessao(guild_id):
+    return os.path.join(_PASTA_SESSOES_PERSISTIDAS, f"sessao_musica_{guild_id}.json")
 
 
-def _carregar_fila_logica_persistida(guild_id):
+def _carregar_estado_sessao(guild_id):
     """Sobrevive a um restart do ERIS enquanto a call continua ativa
     (2026-08-26, pedido do usuário) - evita perder identidades já puxadas do
     pool do ECHO (cada consumo do pool é definitivo lá, não tem como pedir
-    de volta)."""
-    caminho = _arquivo_fila_sessao(guild_id)
+    de volta).
+
+    🔥 Estado COMPLETO, não só a fila (2026-09-04, pedido do usuário: "qnd
+    vc reinicia, a eris para de tocar musica, e n volta mais... tem como
+    pelo menos fazer ela voltar a tocar musica q estava tocando qnd
+    voltar?") - além de `fila_logica`, agora guarda `canal_id`/
+    `text_channel_id`/`iniciado_por`/`modo_continuo`/`modo_aprovadas`/
+    `tocando_agora`, o suficiente pra `retomar_sessoes_persistidas`
+    reconectar e voltar a tocar sozinha no boot, sem precisar de nenhum
+    comando manual."""
+    caminho = _arquivo_estado_sessao(guild_id)
     if not os.path.exists(caminho):
-        return []
+        return None
     try:
         with open(caminho, "r", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
-        return []
+        return None
 
 
-def _salvar_fila_logica_persistida(guild_id, fila_logica):
+def _salvar_estado_sessao(sessao):
     os.makedirs(_PASTA_SESSOES_PERSISTIDAS, exist_ok=True)
-    with open(_arquivo_fila_sessao(guild_id), "w", encoding="utf-8") as f:
-        json.dump(fila_logica, f, ensure_ascii=False, indent=2)
+    estado = {
+        "canal_id": sessao._vc.channel.id if sessao._vc else None,
+        "text_channel_id": sessao.text_channel.id if sessao.text_channel else None,
+        "iniciado_por": sessao.iniciado_por,
+        "modo_continuo": sessao.modo_continuo,
+        "modo_aprovadas": sessao._modo_aprovadas,
+        "tocando_agora": sessao.tocando_agora,
+        "fila_logica": sessao.fila_logica,
+    }
+    with open(_arquivo_estado_sessao(sessao.guild_id), "w", encoding="utf-8") as f:
+        json.dump(estado, f, ensure_ascii=False, indent=2)
+
+
+def _remover_estado_sessao(guild_id):
+    try:
+        os.remove(_arquivo_estado_sessao(guild_id))
+    except FileNotFoundError:
+        pass
 
 
 _ARQUIVO_CANAL_RESTRITO = os.path.join(_PASTA_SESSOES_PERSISTIDAS, "musica_canal_restrito.json")
@@ -165,15 +190,6 @@ def definir_canal_restrito(guild_id, canal_id):
     os.makedirs(_PASTA_SESSOES_PERSISTIDAS, exist_ok=True)
     with open(_ARQUIVO_CANAL_RESTRITO, "w", encoding="utf-8") as f:
         json.dump(canais, f, ensure_ascii=False, indent=2)
-
-
-def _remover_fila_logica_persistida(guild_id):
-    caminho = _arquivo_fila_sessao(guild_id)
-    if os.path.exists(caminho):
-        try:
-            os.remove(caminho)
-        except Exception:
-            pass
 
 
 def _buscar_no_youtube(query):
@@ -471,7 +487,8 @@ class SessaoMusica:
         self._vc = None
         self._loop = asyncio.get_running_loop()
         self.fila = []  # camada 3: streams pré-resolvidos (alvo 5-10)
-        self.fila_logica = _carregar_fila_logica_persistida(guild_id)  # camada 2: identidade, sem stream (alvo 20-50)
+        estado_persistido = _carregar_estado_sessao(guild_id)
+        self.fila_logica = estado_persistido["fila_logica"] if estado_persistido else []  # camada 2: identidade, sem stream (alvo 20-50)
         self.tocando_agora = None
         self.modo_continuo = True
         self._modo_aprovadas = False  # True quando a sessão veio de `tocar_aprovadas` - não cai pro pool ao esgotar
@@ -500,7 +517,7 @@ class SessaoMusica:
         self.fila.clear()
         self.fila_logica.clear()
         self.tocando_agora = None
-        _remover_fila_logica_persistida(self.guild_id)
+        _remover_estado_sessao(self.guild_id)
         if self._vc:
             if self._vc.is_playing() or self._vc.is_paused():
                 self._vc.stop()
@@ -574,6 +591,13 @@ class SessaoMusica:
             self.tocando_agora = None
             return
         print(f" [ERIS] Tocando: {faixa['titulo']} - {faixa['artista']}")
+        # 🔥 Persiste `tocando_agora` FRESCO a cada troca de faixa (2026-09-04,
+        # peça que faltava pro resumo automático - `retomar_sessoes_
+        # persistidas` lê exatamente isso pra saber qual faixa estava
+        # tocando na hora da queda/reinício) - salvar aqui, não só quando a
+        # FILA muda, garante que o estado em disco nunca fica desatualizado
+        # em relação a qual faixa está tocando agora.
+        _salvar_estado_sessao(self)
         # 🔥 ÚNICO lugar que anuncia "tocando agora" com botões - cobre tanto o
         # play imediato (/musica tocar, /caos) quanto a continuação automática
         # (_avancar, sem interaction nenhuma pra responder) de forma uniforme.
@@ -648,7 +672,7 @@ class SessaoMusica:
 
         if self.fila_logica:
             identidade = self.fila_logica.pop(0)
-            _salvar_fila_logica_persistida(self.guild_id, self.fila_logica)
+            _salvar_estado_sessao(self)
             faixa = await _buscar_sugestao_no_youtube(identidade)
             if faixa is None:
                 await self._avancar()  # não achou no YouTube - tenta a próxima identidade
@@ -710,7 +734,7 @@ class SessaoMusica:
                     break  # ECHO não tem mais candidato agora - não adianta insistir
                 self.fila_logica.append(sugestao)
                 self._contar_artista_sessao(sugestao["artista"])
-            _salvar_fila_logica_persistida(self.guild_id, self.fila_logica)
+            _salvar_estado_sessao(self)
         finally:
             self._repondo_fila_logica = False
         if len(self.fila) < _STREAMS_ALVO and self.fila_logica:
@@ -727,7 +751,7 @@ class SessaoMusica:
         try:
             while len(self.fila) < _STREAMS_ALVO and self.fila_logica:
                 identidade = self.fila_logica.pop(0)
-                _salvar_fila_logica_persistida(self.guild_id, self.fila_logica)
+                _salvar_estado_sessao(self)
                 faixa = await _buscar_sugestao_no_youtube(identidade)
                 if faixa:
                     self.fila.append(faixa)
@@ -913,7 +937,7 @@ async def tocar_aprovadas(voice_channel, text_channel, discord_user_id):
     sessao._modo_aprovadas = True
     primeira = candidatas[0]
     sessao.fila_logica.extend(candidatas[1:])
-    _salvar_fila_logica_persistida(sessao.guild_id, sessao.fila_logica)
+    _salvar_estado_sessao(sessao)
     faixa = await _buscar_sugestao_no_youtube(primeira)
     if not faixa:
         return False, f"Não achei \"{primeira['artista']} - {primeira['titulo']}\" no YouTube."
@@ -975,6 +999,75 @@ async def sair_musica(guild_id):
     del _sessoes_musica[guild_id]
     await sessao.sair()
     return "Parei e saí da call."
+
+
+async def retomar_sessoes_persistidas(client):
+    """Reconecta e retoma sozinha qualquer sessão de música que estava
+    tocando quando o processo caiu/foi reiniciado (2026-09-04, pedido do
+    usuário: "qnd vc reinicia, a eris para de tocar musica, e n volta
+    mais... tem como pelo menos fazer ela voltar a tocar musica q estava
+    tocando qnd voltar?"). Chamada 1x no `on_ready` do papel "musica"
+    (`eris/bot.py`) - varre `data/sessao_musica_*.json`, um arquivo por
+    servidor (`sair()`/`/musica sair` já apaga o arquivo de propósito, só
+    sobra um pra ler aqui se a queda foi "suja": crash, kill externo,
+    restart sem passar por `/musica sair`).
+
+    Só resume se o canal de voz persistido ainda existe E ainda tem
+    alguém de verdade nele (mesmo critério de `on_voice_state_update` -
+    nunca entra numa call vazia só pra ficar tocando sozinha; nesse caso
+    só limpa o arquivo, não faz sentido guardar pra sempre). A faixa que
+    estava tocando (`tocando_agora`) volta pro TOPO da fila de streams
+    (`fila`) e é tocada de novo desde o INÍCIO (não do segundo exato de
+    antes - isso exigiria seek de verdade no ffmpeg, fora de escopo aqui);
+    se o link do YouTube já expirou nesse meio tempo, `_avancar` já
+    resolve de novo sozinho (mesmo tratamento de qualquer stream velho
+    no buffer, `_stream_expirado`)."""
+    pasta = _PASTA_SESSOES_PERSISTIDAS
+    if not os.path.isdir(pasta):
+        return
+    for nome_arquivo in os.listdir(pasta):
+        if not (nome_arquivo.startswith("sessao_musica_") and nome_arquivo.endswith(".json")):
+            continue
+        try:
+            guild_id = int(nome_arquivo[len("sessao_musica_"):-len(".json")])
+        except ValueError:
+            continue
+
+        estado = _carregar_estado_sessao(guild_id)
+        if not estado or not estado.get("canal_id"):
+            continue
+
+        guild = client.get_guild(guild_id)
+        if guild is None:
+            _remover_estado_sessao(guild_id)
+            continue
+        canal = guild.get_channel(estado["canal_id"])
+        if not isinstance(canal, discord.VoiceChannel):
+            _remover_estado_sessao(guild_id)
+            continue
+        if not any(not membro.bot for membro in canal.members):
+            print(f" [ERIS] Sessão de música persistida em \"{guild.name}\" não retomada - canal \"{canal.name}\" sem ninguém.")
+            _remover_estado_sessao(guild_id)
+            continue
+        text_channel_id = estado.get("text_channel_id")
+        text_channel = guild.get_channel(text_channel_id) if text_channel_id else None
+
+        sessao = SessaoMusica(guild_id, estado.get("iniciado_por"))
+        sessao.modo_continuo = estado.get("modo_continuo", True)
+        sessao._modo_aprovadas = estado.get("modo_aprovadas", False)
+        sessao.fila_logica = estado.get("fila_logica") or []
+        try:
+            await sessao.entrar(canal, text_channel)
+        except Exception as e:
+            print(f" [ERIS] Não consegui retomar a música em \"{guild.name}\": {e}")
+            continue
+        _sessoes_musica[guild_id] = sessao
+
+        tocando_antes = estado.get("tocando_agora")
+        if tocando_antes:
+            sessao.fila.insert(0, tocando_antes)
+        await sessao._avancar()
+        print(f" [ERIS] Sessão de música retomada em \"{guild.name}\" (canal \"{canal.name}\").")
 
 
 def pular(guild_id, text_channel=None):

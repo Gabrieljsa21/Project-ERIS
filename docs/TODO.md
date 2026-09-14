@@ -4,50 +4,7 @@ Mesma regra da GAIA (`Project G.A.I.A/assistant/docs/TODO.md`): item
 concluído sai daqui e vira `CHANGELOG.md`/`ARQUITETURA.md`, nunca fica
 marcado como ✅ neste arquivo.
 
-### Validar ao vivo que só 1 bot responde ao claim por emoji (2026-08-30)
-
-**Prioridade:** Alta | **Complexidade:** Baixa
-
-Corrigido (`on_raw_reaction_add` só registra dentro de `if completo:`,
-ver `CHANGELOG.md`/`ARQUITETURA.md`) e reiniciado, mas o bug em si só é
-observável com uma reação de verdade no Discord (comportamento de
-entrega de evento do Gateway, não dá pra simular localmente) - testar
-reagindo com o emoji de claim num card e confirmar que só o bot
-"completo" responde, nunca o "música" também.
-
 ## Pendências conhecidas (da extração de 2026-08-24)
-
-### `MODELO_JUIZ` da GAIA está descomissionado pela Groq (achado 2026-08-29)
-
-**Prioridade:** Média | **Complexidade:** Baixa (mas repo da GAIA, não este)
-
-Testando o webhook novo de classificação de personagens do Colecionador
-(`POST /eris/colecao_classificar`), toda chamada devolvia 404 - a causa era
-`MODELO_JUIZ`/`MODELO_GROQ_BARATO_PADRAO` (`Project G.A.I.A/assistant/
-brain_store.py`), hoje `"llama-3.1-8b-instant"`, ter sido descomissionado
-pela Groq (confirmado via `client.models.list()` - não está mais no
-catálogo). Isso também quebra silenciosamente o juiz do Modo em Grupo da
-GAIA (`core.agent.turno.decidir_quem_fala`, mesma constante) - toda decisão
-de "quem responde" nesse modo cai no `except`/lista vazia sem avisar
-ninguém. `classificar_personagem_colecao` (a função nova) contornou isso
-usando um modelo PRÓPRIO (`openai/gpt-oss-20b`), sem tocar em `MODELO_JUIZ`
-- trocar essa constante compartilhada afeta a cadeia de fallback da
-conversa principal também, risco desnecessário pra corrigir aqui. Precisa
-de alguém decidir o modelo de substituição (mesma família `gpt-oss`/`qwen3`
-já usada em outros lugares) e atualizar `brain_store.py` + adicionar
-`reasoning_format="hidden"` onde faltar.
-
-### Mascarar segredos no log (`scrubber_segredos.py` da GAIA nunca foi portado)
-
-**Prioridade:** Baixa | **Complexidade:** Baixa
-
-A GAIA mascara qualquer valor de segredo configurado (token/chave) antes de
-imprimir no log/Discord (`scripts/scrubber_segredos.py`, movido pra
-`assistant/scripts/` em 2026-08-24). O ERIS não tem equivalente - os
-`print()` de erro (`eris/bot.py`, `eris/api_bridge.py`) poderiam, em teoria,
-vazar `DISCORD_BOT_TOKEN` se ele aparecer dentro de uma mensagem de erro da
-própria API do Discord. Risco baixo (não observado ainda), mas o padrão já
-existe pronto pra copiar do lado da GAIA.
 
 ### Validar contra um servidor/bot Discord real
 
@@ -68,7 +25,7 @@ conversa por DM de ponta a ponta, um comando de moderação de cada grupo
 
 Todo o Colecionador (`/waifu`, Prova de Soulmate, Torre/Cidade do
 LegendsAwaken ainda não implementadas, etc.) foi extraído pro
-[Project PANDORA](../Project-PANDORA) - ver "Colecionador de Personagens"
+[Project PANDORA](../../Project-PANDORA) - ver "Colecionador de Personagens"
 em `ARQUITETURA.md` pro registro histórico de como foi desenhado, e o
 `TODO.md`/`ARQUITETURA.md` do PANDORA pras pendências atuais (validar
 cada botão ao vivo depois do cutover, Torre/Cidade, etc.). Nada disso
@@ -209,19 +166,6 @@ Surprises - Radiohead`), sem intervenção manual entre uma e outra -
 confirma tanto a semente inicial (`/radar/semente`) quanto a continuação
 automática (`/radar/proxima`) funcionando juntas numa call real.
 
-### Botões 👍/👎/⏭️ na mensagem de "tocando agora" - View confirmada, feedback bloqueado até a GAIA reiniciar
-
-Implementado em 2026-08-26 (pedido do usuário: "quando ela toca uma
-musica, podia aparecer botoes de like, dislike e next"). Os 3 botões já
-foram clicados numa call real (log confirma ⏭️ funcionando e uma
-tentativa de 👍/👎) - a View renderiza e os cliques chegam certo. **Mas
-👍/👎 falharam com 404** (`GAIA não respondeu (/eris/musica_feedback):
-HTTP Error 404`) - o processo principal da GAIA ainda estava rodando o
-código de ANTES da rota `/eris/musica_feedback` existir (PR #66 do
-Project-GAIA foi mesclado só depois do último restart dela). Não é bug -
-só falta reiniciar a GAIA de verdade pra essa rota específica valer
-(`/eris/musica_caos` já estava valendo, de um restart anterior).
-
 ## Roadmap futuro (registrado, sem decisão de design específica ainda)
 
 Levantado pelo usuário ao planejar o ERIS (2026-08-24), citando AmariBot
@@ -243,7 +187,7 @@ depender da GAIA pra nada.
 - ~~**Colecionável/gacha** (Mudae) - sortear item/personagem, coleção,
   troca, cooldown.~~ **Implementado (WiShards/loja/merge/trocas/Party/
   Vitrine/Favoritas/categoria de combate/Prova de Soulmate) e depois
-  EXTRAÍDO pro [Project PANDORA](../Project-PANDORA) em 2026-08-29** -
+  EXTRAÍDO pro [Project PANDORA](../../Project-PANDORA) em 2026-08-29** -
   pendências/roadmap desse domínio (upgrades sem número concreto, Torre,
   Steal, conquistas, completismo/rankings, eventos, `/wg`/`/hg`/`/mg`)
   ficam registradas no `TODO.md` do PANDORA, não mais aqui.

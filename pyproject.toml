@@ -31,7 +31,7 @@ pandora = { path = "../Project-PANDORA", editable = true }
 # usuário) - busca/extração de áudio streamável do YouTube pra tocar na call
 # (eris/core/musica.py). Não usa cookie/login por padrão (client "android" do
 # extractor, que historicamente não exige o proof-of-origin token que o
-# client "web" passou a exigir desde 2024) - ver ARQUITETURA.md pra
+# client "web" passou a exigir desde 2024) - ver docs/ARQUITETURA.md pra
 # fallback via YOUTUBE_COOKIES_FILE se isso parar de funcionar no futuro.
 #
 # 🔥 discord-ext-voice-recv-dave/PyNaCl/numpy (2026-08-25) - recepção de áudio de
@@ -56,7 +56,7 @@ pandora = { path = "../Project-PANDORA", editable = true }
 # aberta, NÃO mesclada upstream) - delega a decriptação de verdade pro
 # `davey` oficial do Discord (binding Python de `libdave`), nunca reimplementa
 # criptografia própria. VALIDADA numa call real (2026-08-25 - "agora eu a
-# escutei", ver TODO.md).
+# escutei", ver docs/TODO.md).
 #
 # 🔥 FORK PRÓPRIO, não de terceiro (2026-08-25, pedido do usuário: "e ele
 # pode deixar privado ou algo assim e parar de funcionar p nos?") - a PR #54

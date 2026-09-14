@@ -14,7 +14,7 @@ Convenção de código de saída (EXIT_CODE_* abaixo, usados em `eris/tray.py` e
 `eris/main.py`) - IDÊNTICA à da GAIA de propósito, pra qualquer um que já
 conhece o padrão de lá reconhecer na hora:
 - EXIT_CODE_REINICIAR: pedido explícito de reinício (tray local do
-  "completo", ou comando remoto "REINICIAR" recebido pelo "musica" via
+  "principal", ou comando remoto "REINICIAR" recebido pelo "musica" via
   `PORTA_CONTROLE_MUSICA`) - reinicia IMEDIATAMENTE (sem esperar backoff,
   que reseta pro valor inicial), já que não foi uma falha.
 - EXIT_CODE_FECHAR: usuário pediu pra desligar de vez (tray local ou
@@ -23,7 +23,7 @@ conhece o padrão de lá reconhecer na hora:
   inesperada - espera (backoff) e reinicia sozinho.
 
 Roda escondido via pythonw.exe (ver `iniciar_eris.bat`) - print() vai pro
-log redirecionado pelo próprio `.bat` (`logs\\watchdog_completo.log`/
+log redirecionado pelo próprio `.bat` (`logs\\watchdog_principal.log`/
 `logs\\watchdog_musica.log`); a saída do PRÓPRIO ERIS (stdout/stderr do
 subprocesso supervisionado) já vai pro `logs/AAAA-MM-DD.log` de dentro dele
 mesmo (`eris/main.py::_RedirecionadorLog`), então o Popen aqui não precisa
@@ -51,7 +51,7 @@ PASTA_PROJETO = os.path.dirname(PASTA_PROJETO)
 
 
 def _papel_do_argv():
-    return "musica" if len(sys.argv) > 1 and sys.argv[1].strip().lower() == "musica" else "completo"
+    return "musica" if len(sys.argv) > 1 and sys.argv[1].strip().lower() == "musica" else "principal"
 
 
 def _log(mensagem):

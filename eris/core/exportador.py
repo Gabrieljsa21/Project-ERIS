@@ -6,7 +6,7 @@ reimplementada em Python puro usando a API REST oficial do Discord direto
 precisa da conexão de Gateway (WebSocket) do bot pra isso, só o token já
 basta pra ler mensagens de um canal. Extraído de
 `integrations/discord/discord_exportador.py` (GAIA, antes da extração de
-2026-08-24) - função administrativa do ERIS agora (ver ARQUITETURA.md),
+2026-08-24) - função administrativa do ERIS agora (ver docs/ARQUITETURA.md),
 comportamento idêntico.
 
 Exige que o bot já esteja no servidor de onde quer exportar, com permissão
