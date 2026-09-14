@@ -6,7 +6,7 @@ cache de servidores e auditoria de moderação.
 🔥 O Colecionador (14 tabelas `colecao_*`) foi EXTRAÍDO pro Project-PANDORA
 em 2026-08-29 (biblioteca Python local, `pandora.db` - banco PRÓPRIO,
 `data/pandora.db`, não mais `data/eris.db`) - ver "Extraído pro Project
-PANDORA" em `ARQUITETURA.md`. Esse era o motivo original da escolha de
+PANDORA" em `docs/ARQUITETURA.md`. Esse era o motivo original da escolha de
 SQLite aqui (mencionado no commit original: "domínios futuros de alta
 cardinalidade... colecionáveis") - hoje esse domínio já cresceu e saiu
 daqui, mas SQLite continua sendo a escolha certa pro núcleo (donos/

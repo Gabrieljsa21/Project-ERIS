@@ -114,7 +114,7 @@ def pedir_turno_interprete(guild_id, speaker_id, speaker_nome, eh_dono, audio_pc
     """Manda uma fala já fechada (PCM 16kHz mono, ver eris/core/voz_captura.py)
     pra GAIA transcrever/traduzir/sintetizar. Devolve um dict
     {"caminho_audio", "legenda_original", "legenda_traducao"} - `caminho_audio`
-    é um caminho LOCAL (mesma máquina, ver ARQUITETURA.md) que o ERIS abre
+    é um caminho LOCAL (mesma máquina, ver docs/ARQUITETURA.md) que o ERIS abre
     direto pra tocar na call, mesmo padrão já usado por `enviar_arquivo`/
     `enviar_audio_voz`. None se não houver nada pra falar (silêncio detectado
     como alucinação do Whisper, etc.) ou se a GAIA não respondeu."""

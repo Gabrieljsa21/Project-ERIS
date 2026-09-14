@@ -5,15 +5,15 @@ quando ele roda escondido via `pythonw.exe` (ver `iniciar_eris.bat`/
 o processo está de pé nem pra derrubá-lo (2026-08-30, pedido do usuário: "n
 quero terminais abertos p cd bot online, oculta isso").
 
-**Só o papel "completo" mostra ícone (2026-08-30, correção do mesmo dia -
+**Só o papel "principal" mostra ícone (2026-08-30, correção do mesmo dia -
 usuário: "Vc criou 2 eris, falei q era p criar apenas 1 contendo as 2")** -
 os 2 papéis CONTINUAM processos separados (isolamento de crash preservado
 de propósito: o papel "musica" tem histórico real de instabilidade recente,
 extraindo o Colecionador pro Project PANDORA - juntar os 2 num processo só
-arriscaria derrubar o "completo" junto numa queda do "musica"), mas o
+arriscaria derrubar o "principal" junto numa queda do "musica"), mas o
 "musica" agora sobe SEM ícone próprio - só um listener de controle remoto
-(`PORTA_CONTROLE_MUSICA`) que o menu do "completo" usa pra Reiniciar/Fechar
-a instância música à distância. "Ver logs" do "completo" já cobre as 2
+(`PORTA_CONTROLE_MUSICA`) que o menu do "principal" usa pra Reiniciar/Fechar
+a instância música à distância. "Ver logs" do "principal" já cobre as 2
 (`eris/main.py::_RedirecionadorLog` escreve as 2 no MESMO
 `logs/AAAA-MM-DD.log`).
 
@@ -73,7 +73,7 @@ def _abrir_logs():
 
 def _encerrar(icon, codigo):
     """Fecha ESTE processo com `codigo` - usado tanto pelo clique local no
-    menu (papel "completo") quanto pelo listener de controle remoto (papel
+    menu (papel "principal") quanto pelo listener de controle remoto (papel
     "musica", `icon=None`, ver `_escutar_comandos_remotos` abaixo)."""
     _codigo_saida[0] = codigo
     if icon is not None:
@@ -116,7 +116,7 @@ def _enviar_comando_musica(comando):
 def _escutar_comandos_remotos():
     """Só o papel "musica" chama isso (ver `iniciar` abaixo) - aceita
     conexões locais de `_enviar_comando_musica` (rodando no processo
-    "completo") com uma linha de texto ("FECHAR"/"REINICIAR")."""
+    "principal") com uma linha de texto ("FECHAR"/"REINICIAR")."""
     servidor = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     servidor.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     try:
@@ -148,9 +148,9 @@ def _escutar_comandos_remotos():
 def _montar_menu():
     status_musica = lambda item: f"Música: {'rodando' if _musica_rodando() else 'parada'}"  # noqa: E731
     return pystray.Menu(
-        pystray.MenuItem("ERIS (completo) - rodando", None, enabled=False),
+        pystray.MenuItem("ERIS (principal) - rodando", None, enabled=False),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Ver logs (completo + música)", lambda icon, item: _abrir_logs()),
+        pystray.MenuItem("Ver logs (principal + música)", lambda icon, item: _abrir_logs()),
         pystray.MenuItem("Reiniciar", lambda icon, item: _encerrar(icon, EXIT_CODE_REINICIAR)),
         pystray.MenuItem("Fechar", lambda icon, item: _encerrar(icon, EXIT_CODE_FECHAR)),
         pystray.Menu.SEPARATOR,
@@ -161,10 +161,10 @@ def _montar_menu():
 
 
 def iniciar(papel):
-    """Chamado por `eris/main.py` pras 2 instâncias - só o papel "completo"
+    """Chamado por `eris/main.py` pras 2 instâncias - só o papel "principal"
     sobe um ícone de verdade (ver docstring do módulo pro motivo); o
     "musica" só sobe o listener de controle remoto, sem UI nenhuma."""
-    if papel != "completo":
+    if papel != "principal":
         _escutar_comandos_remotos()
         return
 
@@ -173,7 +173,7 @@ def iniciar(papel):
         return
 
     def _rodar():
-        icon = pystray.Icon("eris_completo", _carregar_icone(), "ERIS", _montar_menu())
+        icon = pystray.Icon("eris_principal", _carregar_icone(), "ERIS", _montar_menu())
         icon.run()
 
-    threading.Thread(target=_rodar, daemon=True, name="tray-eris-completo").start()
+    threading.Thread(target=_rodar, daemon=True, name="tray-eris-principal").start()

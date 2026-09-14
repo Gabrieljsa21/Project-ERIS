@@ -21,14 +21,17 @@ from dotenv import load_dotenv
 
 PASTA_PROJETO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-# 🔥 Papel desta instância - "completo" (padrão, bot único de sempre) ou
-# "musica" (2ª instância, bot Discord PRÓPRIO dedicado só ao Modo Música -
-# 2026-08-26, pedido do usuário: "esse novo bot devo fazer p ERIS? O primeiro
-# é da GAIA" -> sim, 2ª instância do MESMO projeto ERIS, token diferente).
+# 🔥 Papel desta instância - "principal" (padrão, bot único de sempre -
+# renomeado de "completo" em 2026-09-04, pedido do usuário: "Faz sentido
+# esse nome 'Completo'?" -> "não faz literalmente tudo, faz tudo MENOS o
+# Modo Música" -> "Pode renomear para Principal") ou "musica" (2ª
+# instância, bot Discord PRÓPRIO dedicado só ao Modo Música - 2026-08-26,
+# pedido do usuário: "esse novo bot devo fazer p ERIS? O primeiro é da
+# GAIA" -> sim, 2ª instância do MESMO projeto ERIS, token diferente).
 # Detectado por argv (`python -m eris.main musica`) em vez de variável de
 # ambiente - evita colidir com o `override=True` do load_dotenv abaixo (ver
 # `.env.musica.example`).
-PAPEL = "musica" if len(sys.argv) > 1 and sys.argv[1].strip().lower() == "musica" else "completo"
+PAPEL = "musica" if len(sys.argv) > 1 and sys.argv[1].strip().lower() == "musica" else "principal"
 _ARQUIVO_ENV = ".env.musica" if PAPEL == "musica" else ".env"
 
 # 🔥 override=True (mesmo motivo já documentado no HESTIA/MOIRAI e corrigido
@@ -38,6 +41,7 @@ _ARQUIVO_ENV = ".env.musica" if PAPEL == "musica" else ".env"
 load_dotenv(os.path.join(PASTA_PROJETO, _ARQUIVO_ENV), override=True)
 
 from eris import bot, db, tray  # noqa: E402
+from eris.seguranca_log import limpar_segredos  # noqa: E402
 from eris.api_bridge import iniciar_servidor_api  # noqa: E402
 from pandora import db as colecao_db  # noqa: E402 - mesmo alias de `eris/bot.py`
 from eris.config import PORTA_INSTANCIA_UNICA, PORTA_INSTANCIA_UNICA_MUSICA  # noqa: E402
@@ -67,7 +71,7 @@ class _RedirecionadorLog:
         self._arquivo = None
         self._data_arquivo = None
         # 🔥 Horário por linha (2026-09-02, pedido do usuário depois de tentar
-        # investigar uma queda do papel "completo" sem conseguir correlacionar
+        # investigar uma queda do papel "principal" sem conseguir correlacionar
         # nada no log com o horário real - "coloca horario tbm no log") - só
         # no INÍCIO de cada linha nova, nunca no meio de um `print()` picado em
         # várias chamadas de `write()` (`sep`/`end` do print sempre viram
@@ -103,6 +107,7 @@ class _RedirecionadorLog:
         return "".join(partes)
 
     def write(self, texto):
+        texto = limpar_segredos(texto)
         if self._stream_original:
             try:
                 self._stream_original.write(texto)
@@ -132,7 +137,7 @@ def _ativar_log_em_disco():
 
 def _ativar_diagnostico_de_saida():
     """2026-09-02, pedido do usuário depois de investigar uma queda do
-    papel "completo" (código 15) sem achar NENHUM rastro - nem traceback
+    papel "principal" (código 15) sem achar NENHUM rastro - nem traceback
     no log, nem crash reportado no Event Viewer do Windows. Isso descarta
     uma exceção Python normal (teria log) e um crash nativo relatado pelo
     próprio Windows (teria evento) - sobra "algo terminou o processo sem
@@ -302,7 +307,7 @@ def main():
         # o watchdog não deve ficar tentando de novo pra sempre.
         sys.exit(EXIT_CODE_FECHAR)
 
-    if PAPEL == "completo":
+    if PAPEL == "principal":
         db.inicializar()
         # 🔥 `colecao_db.inicializar()` (2026-09-02, correção de causa raiz -
         # ver docstring de `_verificar_migracao_completa`) - NUNCA era
@@ -320,13 +325,13 @@ def main():
     else:
         # 🔥 Papel "musica" não precisa de `db` (sem moderação/donos) nem da
         # ponte HTTP (`api_bridge.py`, porta 8772 já em uso pela instância
-        # "completo") - a GAIA nunca chama DENTRO dessa instância, só ela
+        # "principal") - a GAIA nunca chama DENTRO dessa instância, só ela
         # chamando a GAIA (`gaia_webhook.pedir_proxima_musica`).
         print(" [SISTEMA] ERIS (papel música) pronto - conectando ao Discord...")
 
     # 🔥 Ícone de bandeja (2026-08-30) - o ERIS roda em produção via
     # pythonw.exe (sem console, ver iniciar_eris.bat/iniciar_eris_oculto.vbs).
-    # Só o papel "completo" mostra ícone de verdade (usuário: "falei q era p
+    # Só o papel "principal" mostra ícone de verdade (usuário: "falei q era p
     # criar apenas 1 [icone] contendo as 2") - "musica" só sobe o listener de
     # controle remoto que esse ícone usa pra Reiniciar/Fechar à distância,
     # ver eris/tray.py.
@@ -341,7 +346,7 @@ def main():
     # OUTRO caminho que não seja `run()` retornar aqui (crash nativo, término
     # externo), essa linha simplesmente não vai aparecer - o que já é um
     # diagnóstico útil por exclusão (compara com o horário do log de
-    # `watchdog_completo.log`/`watchdog_musica.log`).
+    # `watchdog_principal.log`/`watchdog_musica.log`).
     codigo = tray.codigo_saida()
     print(f" [SISTEMA] Encerrando de propósito (client.close() retornou) - código de saída {codigo}.")
     sys.exit(codigo)

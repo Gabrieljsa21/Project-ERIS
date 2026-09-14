@@ -18,7 +18,7 @@ from discord import app_commands
 
 from eris import db
 # 🔥 Colecionador EXTRAÍDO pro Project-PANDORA (2026-08-29, biblioteca Python
-# local por path, ver pyproject.toml/ARQUITETURA.md) - `colecao_db` é um
+# local por path, ver pyproject.toml/docs/ARQUITETURA.md) - `colecao_db` é um
 # ALIAS de propósito (não reaproveita o nome `db` de cima, que continua
 # sendo o `eris.db` de sempre - donos/roteamento/auditoria/cache de guilds,
 # ver `db.salvar_guilds_cache` mais abaixo) - dois bancos SQLite distintos
@@ -54,6 +54,7 @@ _auto_colecionador_usuarios = None
 _sincronizador_catalogo = None
 _scheduler_worldboss = None
 _scheduler_batalha = None
+_musica_retomada = False
 
 
 def cliente_conectado():
@@ -86,6 +87,511 @@ async def _responder_resultado(interaction, ok, mensagem):
         await interaction.response.send_message(mensagem, ephemeral=not ok)
     else:
         await interaction.followup.send(mensagem, ephemeral=not ok)
+
+
+def _texto_configuracao_pandora(guild):
+    config = colecao_db.obter_configuracao_colecao(guild.id)
+    canal = f"<#{config['canal_anuncio_id']}>" if config["canal_anuncio_id"] else "canal padrão"
+    return (
+        f"**Administração — {guild.name}**\n"
+        f"Rolls: {config['rolls_por_ciclo']}/{config['ciclo_rolls_minutos']} min · "
+        f"Claims: {config['claims_por_ciclo']}/{config['ciclo_claims_minutos']} min\n"
+        f"Progressão: até +{config['teto_bonus_rolls_progressao']} Rolls · "
+        f"+{config['teto_bonus_claims_progressao']} Claims\n"
+        f"Card: {config['duracao_card_segundos']}s · Puxada: {config['max_rolls_por_comando']} · "
+        f"Wish: {round(config['chance_wish_roll'] * 100)}%\n"
+        f"NSFW: {'ligado' if config['nsfw_permitido'] else 'desligado'} · "
+        f"Canal automático: {canal}"
+    )
+
+
+class _ModalLimitesPandora(discord.ui.Modal, title="Limites do ciclo"):
+    def __init__(self, guild_id, config):
+        super().__init__()
+        self.guild_id = guild_id
+        self.rolls = discord.ui.TextInput(label="Rolls por ciclo", default=str(config["rolls_por_ciclo"]), max_length=4)
+        self.minutos_rolls = discord.ui.TextInput(label="Minutos entre Rolls", default=str(config["ciclo_rolls_minutos"]), max_length=4)
+        self.claims = discord.ui.TextInput(label="Claims por ciclo", default=str(config["claims_por_ciclo"]), max_length=3)
+        self.minutos_claims = discord.ui.TextInput(label="Minutos entre Claims", default=str(config["ciclo_claims_minutos"]), max_length=4)
+        for campo in (self.rolls, self.minutos_rolls, self.claims, self.minutos_claims):
+            self.add_item(campo)
+
+    async def on_submit(self, interaction):
+        try:
+            rolls, min_rolls, claims, min_claims = (int(campo.value.strip()) for campo in (self.rolls, self.minutos_rolls, self.claims, self.minutos_claims))
+            if not 1 <= rolls <= 1000 or not 1 <= claims <= 100 or not 1 <= min_rolls <= 1440 or not 1 <= min_claims <= 1440:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message("Use números válidos: Rolls 1–1000, Claims 1–100 e ciclos 1–1440 min.", ephemeral=True)
+            return
+        for campo, valor in (("rolls_por_ciclo", rolls), ("ciclo_rolls_minutos", min_rolls), ("claims_por_ciclo", claims), ("ciclo_claims_minutos", min_claims)):
+            colecao_db.definir_configuracao_colecao(self.guild_id, campo, valor)
+        await interaction.response.send_message("Limites do ciclo atualizados.", ephemeral=True)
+
+
+class _ModalProgressaoPandora(discord.ui.Modal, title="Tetos da Progressão"):
+    def __init__(self, guild_id, config):
+        super().__init__()
+        self.guild_id = guild_id
+        self.rolls = discord.ui.TextInput(label="Teto extra de Rolls", default=str(config["teto_bonus_rolls_progressao"]), max_length=4)
+        self.claims = discord.ui.TextInput(label="Teto extra de Claims", default=str(config["teto_bonus_claims_progressao"]), max_length=3)
+        self.add_item(self.rolls)
+        self.add_item(self.claims)
+
+    async def on_submit(self, interaction):
+        try:
+            rolls, claims = int(self.rolls.value.strip()), int(self.claims.value.strip())
+            if not 0 <= rolls <= 1000 or not 0 <= claims <= 100:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message("Use valores entre 0–1000 Rolls e 0–100 Claims.", ephemeral=True)
+            return
+        colecao_db.definir_configuracao_colecao(self.guild_id, "teto_bonus_rolls_progressao", rolls)
+        colecao_db.definir_configuracao_colecao(self.guild_id, "teto_bonus_claims_progressao", claims)
+        await interaction.response.send_message(f"Tetos atualizados: +{rolls} Rolls e +{claims} Claims.", ephemeral=True)
+
+
+class _ModalCardsPandora(discord.ui.Modal, title="Cards e puxadas"):
+    def __init__(self, guild_id, config):
+        super().__init__()
+        self.guild_id = guild_id
+        self.duracao = discord.ui.TextInput(label="Duração do card (segundos)", default=str(config["duracao_card_segundos"]), max_length=5)
+        self.puxada = discord.ui.TextInput(label="Máximo por puxada", default=str(config["max_rolls_por_comando"]), max_length=4)
+        self.wish = discord.ui.TextInput(label="Chance de wishlist (%)", default=str(round(config["chance_wish_roll"] * 100)), max_length=3)
+        self.canal = discord.ui.TextInput(label="ID do canal automático (vazio = padrão)", default=config["canal_anuncio_id"] or "", required=False, max_length=25)
+        for campo in (self.duracao, self.puxada, self.wish, self.canal):
+            self.add_item(campo)
+
+    async def on_submit(self, interaction):
+        try:
+            duracao, puxada, wish = int(self.duracao.value.strip()), int(self.puxada.value.strip()), int(self.wish.value.strip())
+            canal = self.canal.value.strip()
+            if not 10 <= duracao <= 86400 or not 1 <= puxada <= 1000 or not 0 <= wish <= 100 or (canal and not canal.isdigit()):
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message("Confira os valores: duração 10–86400, puxada 1–1000, wishlist 0–100 e ID numérico de canal.", ephemeral=True)
+            return
+        for campo, valor in (("duracao_card_segundos", duracao), ("max_rolls_por_comando", puxada), ("chance_wish_roll", wish / 100), ("canal_anuncio_id", canal or None)):
+            colecao_db.definir_configuracao_colecao(self.guild_id, campo, valor)
+        await interaction.response.send_message("Configuração de cards e puxadas atualizada.", ephemeral=True)
+
+
+class _ModalCooldownBatalhaPandora(discord.ui.Modal, title="Cooldown de batalha"):
+    def __init__(self, guild_id, config):
+        super().__init__()
+        self.guild_id = guild_id
+        self.horas = discord.ui.TextInput(label="Horas (0 = desativado)", default=str(config["cooldown_batalha_horas"]), max_length=4)
+        self.add_item(self.horas)
+
+    async def on_submit(self, interaction):
+        try:
+            horas = int(self.horas.value.strip())
+            if not 0 <= horas <= 720:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message("Use um número de 0 a 720 horas.", ephemeral=True)
+            return
+        colecao_db.definir_configuracao_colecao(self.guild_id, "cooldown_batalha_horas", horas)
+        colecao_db.definir_configuracao_colecao(self.guild_id, "cooldown_batalha_ativo", 1 if horas else 0)
+        await interaction.response.send_message("Cooldown de batalha " + (f"definido em {horas}h." if horas else "desativado."), ephemeral=True)
+
+
+class _ModalWorldBossPandora(discord.ui.Modal, title="World Boss"):
+    def __init__(self, guild_id, config):
+        super().__init__()
+        self.guild_id = guild_id
+        self.ativo = discord.ui.TextInput(label="Ativo? (sim/não)", default="sim" if config["worldboss_ativo"] else "não", max_length=4)
+        self.horarios = discord.ui.TextInput(label="Horários Brasília (ex.: 10,14,18,22)", default=config["worldboss_horarios"], max_length=50)
+        self.inscricao = discord.ui.TextInput(label="Minutos de inscrição", default=str(config["worldboss_inscricao_minutos"]), max_length=3)
+        self.turno = discord.ui.TextInput(label="Segundos por turno", default=str(config["worldboss_turno_segundos"]), max_length=4)
+        self.limite = discord.ui.TextInput(label="Máximo de turnos", default=str(config["worldboss_limite_turnos"]), max_length=4)
+        for campo in (self.ativo, self.horarios, self.inscricao, self.turno, self.limite):
+            self.add_item(campo)
+
+    async def on_submit(self, interaction):
+        try:
+            ativo = self.ativo.value.strip().lower() in {"sim", "s", "true", "1"}
+            horarios = sorted({int(valor.strip()) for valor in self.horarios.value.split(",")})
+            inscricao, turno, limite = int(self.inscricao.value), int(self.turno.value), int(self.limite.value)
+            if not horarios or any(hora < 0 or hora > 23 for hora in horarios) or not 1 <= inscricao <= 120 or not 10 <= turno <= 3600 or not 1 <= limite <= 1000:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message("Confira: horários 0–23 separados por vírgula, inscrição 1–120, turno 10–3600 e limite 1–1000.", ephemeral=True)
+            return
+        valores = (("worldboss_ativo", 1 if ativo else 0), ("worldboss_horarios", ",".join(map(str, horarios))), ("worldboss_inscricao_minutos", inscricao), ("worldboss_turno_segundos", turno), ("worldboss_limite_turnos", limite))
+        for campo, valor in valores:
+            colecao_db.definir_configuracao_colecao(self.guild_id, campo, valor)
+        await interaction.response.send_message("World Boss configurado. As mudanças valem para os próximos eventos.", ephemeral=True)
+
+
+class _ModalSeriePandora(discord.ui.Modal):
+    def __init__(self, guild_id, bloquear):
+        super().__init__(title="Bloquear série" if bloquear else "Desbloquear série")
+        self.guild_id = guild_id
+        self.bloquear = bloquear
+        self.serie = discord.ui.TextInput(label="Nome da série/obra", max_length=100)
+        self.add_item(self.serie)
+
+    async def on_submit(self, interaction):
+        serie = self.serie.value.strip()
+        if not serie:
+            await interaction.response.send_message("Informe uma série.", ephemeral=True)
+            return
+        canonica = colecao_db.encontrar_serie_por_nome(serie)
+        if canonica:
+            _aplicar_serie_admin(self.guild_id, canonica, self.bloquear)
+            await interaction.response.send_message(f'Série "{canonica}" {"bloqueada" if self.bloquear else "desbloqueada"}.', ephemeral=True)
+            return
+        candidatas = colecao_db.series_do_catalogo(serie, 25)
+        if not candidatas:
+            await interaction.response.send_message(f'Nenhuma série parecida com "{serie}".', ephemeral=True)
+            return
+        await interaction.response.send_message("Escolha a série:", view=_ViewEscolherSerieAdmin(self.guild_id, self.bloquear, candidatas), ephemeral=True)
+
+
+def _aplicar_serie_admin(guild_id, serie, bloquear):
+    (colecao_db.bloquear_serie if bloquear else colecao_db.desbloquear_serie)(guild_id, serie)
+
+
+class _ViewEscolherSerieAdmin(discord.ui.View):
+    def __init__(self, guild_id, bloquear, series):
+        super().__init__(timeout=120)
+        self.guild_id, self.bloquear = guild_id, bloquear
+        select = discord.ui.Select(placeholder="Escolha a série", options=[discord.SelectOption(label=serie[:100], value=str(i)) for i, serie in enumerate(series)])
+        async def escolher(interaction):
+            serie = series[int(interaction.data["values"][0])]
+            _aplicar_serie_admin(self.guild_id, serie, self.bloquear)
+            await interaction.response.edit_message(content=f'Série "{serie}" {"bloqueada" if self.bloquear else "desbloqueada"}.', view=None)
+        select.callback = escolher
+        self.add_item(select)
+
+
+class _ModalResetarAcoesPandora(discord.ui.Modal, title="Resetar ações de jogador"):
+    def __init__(self, guild_id):
+        super().__init__()
+        self.guild_id = guild_id
+        self.membro = discord.ui.TextInput(label="ID do jogador")
+        self.acao = discord.ui.TextInput(label="Ação: rolls, claims ou ambos", default="ambos", max_length=10)
+        self.add_item(self.membro)
+        self.add_item(self.acao)
+
+    async def on_submit(self, interaction):
+        try:
+            membro_id = int(self.membro.value.strip())
+        except ValueError:
+            await interaction.response.send_message("O ID do jogador precisa ser numérico.", ephemeral=True)
+            return
+        acao = self.acao.value.strip().lower()
+        if acao not in {"rolls", "claims", "ambos"}:
+            await interaction.response.send_message("Use rolls, claims ou ambos.", ephemeral=True)
+            return
+        resultados = []
+        if acao in {"rolls", "ambos"}:
+            resultados.append(f"{colecao_db.resetar_rolls_admin(self.guild_id, membro_id)} Rolls")
+        if acao in {"claims", "ambos"}:
+            resultados.append(f"{colecao_db.resetar_claims_admin(self.guild_id, membro_id)} Claims")
+        await interaction.response.send_message("Reset concluído: " + " · ".join(resultados) + ".", ephemeral=True)
+
+
+class _ModalPersonagemAdminPandora(discord.ui.Modal, title="Ação em personagem"):
+    def __init__(self, guild_id, acao_inicial="afinidade"):
+        super().__init__()
+        self.guild_id = guild_id
+        self.acao = discord.ui.TextInput(label="Ação: dar ou afinidade", default=acao_inicial, max_length=10)
+        self.membro = discord.ui.TextInput(label="ID do jogador")
+        self.personagem = discord.ui.TextInput(label="ID da personagem")
+        self.valor = discord.ui.TextInput(label="Afinidade (somente para afinidade)", required=False, max_length=2)
+        for campo in (self.acao, self.membro, self.personagem, self.valor):
+            self.add_item(campo)
+
+    async def on_submit(self, interaction):
+        try:
+            acao = self.acao.value.strip().lower()
+            membro_id = int(self.membro.value.strip())
+            if acao not in {"dar", "afinidade"}:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message("Use ação dar/afinidade e IDs numéricos.", ephemeral=True)
+            return
+        texto_personagem = self.personagem.value.strip()
+        if not texto_personagem.isdigit():
+            candidatas = colecao_db.buscar_personagens(texto_personagem, 25)
+            if not candidatas:
+                await interaction.response.send_message(f'Nenhuma personagem parecida com "{texto_personagem}".', ephemeral=True)
+                return
+            await interaction.response.send_message("Escolha a personagem:", view=_ViewEscolherPersonagemAdmin(self.guild_id, membro_id, acao, self.valor.value.strip(), candidatas), ephemeral=True)
+            return
+        personagem_id = int(texto_personagem)
+        if acao == "afinidade":
+            try:
+                valor = int(self.valor.value.strip())
+                if not 0 <= valor <= 10:
+                    raise ValueError
+            except ValueError:
+                await interaction.response.send_message("A Afinidade deve estar entre 0 e 10.", ephemeral=True)
+                return
+            if colecao_db.dono_do_personagem(self.guild_id, personagem_id) != str(membro_id):
+                await interaction.response.send_message("Esse jogador não possui essa personagem.", ephemeral=True)
+                return
+            novo = colecao_db.definir_afinidade_admin(self.guild_id, membro_id, personagem_id, valor)
+            personagem = colecao_db.personagem_por_id(personagem_id)
+            await interaction.response.send_message(f"Afinidade de {personagem['nome']} definida em {novo}.", ephemeral=True)
+            return
+        membro = interaction.guild.get_member(membro_id)
+        if membro is None:
+            await interaction.response.send_message("Jogador não encontrado neste servidor.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True)
+        ok, erro, embed = await gacha.atribuir_personagem_admin(self.guild_id, personagem_id, membro)
+        if not ok:
+            await interaction.followup.send(erro, ephemeral=True)
+            return
+        await interaction.followup.send(embed=embed, ephemeral=True)
+
+
+class _ViewEscolherPersonagemAdmin(discord.ui.View):
+    def __init__(self, guild_id, membro_id, acao, valor, candidatas):
+        super().__init__(timeout=120)
+        select = discord.ui.Select(placeholder="Escolha a personagem", options=[discord.SelectOption(label=f"{p['nome']} · #{p['id']}"[:100], value=str(p['id'])) for p in candidatas])
+        async def escolher(interaction):
+            personagem_id = int(interaction.data["values"][0])
+            if acao == "afinidade":
+                try: valor_int = int(valor)
+                except ValueError: valor_int = -1
+                if not 0 <= valor_int <= 10 or colecao_db.dono_do_personagem(guild_id, personagem_id) != str(membro_id):
+                    await interaction.response.edit_message(content="Afinidade inválida ou a personagem não pertence ao jogador.", view=None); return
+                novo = colecao_db.definir_afinidade_admin(guild_id, membro_id, personagem_id, valor_int)
+                await interaction.response.edit_message(content=f"Afinidade definida em {novo}.", view=None); return
+            membro = interaction.guild.get_member(membro_id)
+            if membro is None:
+                await interaction.response.edit_message(content="Jogador não encontrado.", view=None); return
+            await interaction.response.defer()
+            ok, erro, _embed = await gacha.atribuir_personagem_admin(guild_id, personagem_id, membro)
+            await interaction.edit_original_response(content=erro if not ok else "Personagem entregue.", view=None)
+        select.callback = escolher
+        self.add_item(select)
+
+
+class _ModalBuscarPersonagemParaDar(discord.ui.Modal, title="Buscar personagem"):
+    def __init__(self, guild_id, membro_id):
+        super().__init__()
+        self.guild_id, self.membro_id = guild_id, membro_id
+        self.nome = discord.ui.TextInput(label="Nome da personagem", placeholder="Digite parte do nome", max_length=100)
+        self.add_item(self.nome)
+
+    async def on_submit(self, interaction):
+        candidatas = colecao_db.buscar_personagens(self.nome.value.strip(), 25)
+        if not candidatas:
+            await interaction.response.send_message("Nenhuma personagem encontrada.", ephemeral=True)
+            return
+        await interaction.response.send_message("Escolha a personagem:", view=_ViewDarPersonagem(interaction.guild, self.membro_id, candidatas), ephemeral=True)
+
+
+class _ViewDarPersonagem(discord.ui.View):
+    def __init__(self, guild, membro_id=None, candidatas=None):
+        super().__init__(timeout=180)
+        self.guild, self.guild_id, self.membro_id = guild, guild.id, membro_id
+        if membro_id is None:
+            seletor = discord.ui.UserSelect(placeholder="Escolha quem vai receber")
+            async def escolher_membro(interaction):
+                self.membro_id = int(interaction.data["values"][0])
+                await interaction.response.send_modal(_ModalBuscarPersonagemParaDar(self.guild_id, self.membro_id))
+            seletor.callback = escolher_membro
+            self.add_item(seletor)
+        else:
+            opcoes = []
+            for personagem in candidatas:
+                dono_id = colecao_db.dono_do_personagem(self.guild_id, personagem["id"])
+                dono = self.guild.get_member(int(dono_id)) if dono_id else None
+                dono_txt = dono.display_name if dono else (f"ID {dono_id}" if dono_id else "Livre")
+                opcoes.append(discord.SelectOption(
+                    label=f"{personagem['nome']} · #{personagem['id']}"[:100], value=str(personagem["id"]),
+                    description=(f"Já pertence a: {dono_txt}" if dono_id else "Livre para entregar")[:100],
+                    emoji="👤" if dono_id else "✨",
+                ))
+            seletor = discord.ui.Select(placeholder="Escolha a personagem", options=opcoes)
+            async def entregar(interaction):
+                membro = interaction.guild.get_member(self.membro_id)
+                if membro is None:
+                    await interaction.response.edit_message(content="Jogador não encontrado.", view=None)
+                    return
+                await interaction.response.defer()
+                ok, erro, _embed = await gacha.atribuir_personagem_admin(self.guild_id, int(interaction.data["values"][0]), membro)
+                await interaction.edit_original_response(content=erro if not ok else f"Personagem entregue para {membro.display_name}.", view=None)
+            seletor.callback = entregar
+            self.add_item(seletor)
+
+
+class _ViewFerramentasAdminPandora(discord.ui.View):
+    def __init__(self, guild_id, autor_id):
+        super().__init__(timeout=180)
+        self.guild_id = guild_id
+        self.autor_id = str(autor_id)
+
+    async def _autor(self, interaction):
+        if str(interaction.user.id) != self.autor_id:
+            await interaction.response.send_message("Este painel pertence a outro administrador.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="Bloquear série", emoji="🚫", style=discord.ButtonStyle.secondary, row=0)
+    async def bloquear(self, interaction, _button):
+        if await self._autor(interaction):
+            await interaction.response.send_modal(_ModalSeriePandora(self.guild_id, True))
+
+    @discord.ui.button(label="Desbloquear série", emoji="✅", style=discord.ButtonStyle.secondary, row=0)
+    async def desbloquear(self, interaction, _button):
+        if await self._autor(interaction):
+            await interaction.response.send_modal(_ModalSeriePandora(self.guild_id, False))
+
+    @discord.ui.button(label="Resetar ações", emoji="🔄", style=discord.ButtonStyle.secondary, row=0)
+    async def resetar(self, interaction, _button):
+        if await self._autor(interaction):
+            await interaction.response.send_modal(_ModalResetarAcoesPandora(self.guild_id))
+
+    @discord.ui.button(label="Personagem", emoji="👤", style=discord.ButtonStyle.secondary, row=0)
+    async def personagem(self, interaction, _button):
+        if await self._autor(interaction):
+            await interaction.response.send_modal(_ModalPersonagemAdminPandora(self.guild_id))
+
+    @discord.ui.button(label="Validar classes", emoji="🔎", style=discord.ButtonStyle.secondary, row=1)
+    async def validar_classes(self, interaction, _button):
+        if not await self._autor(interaction):
+            return
+        await interaction.response.defer(ephemeral=True)
+        pendentes = await asyncio.to_thread(colecao_db.personagens_possuidos_sem_classe, 100, False)
+        if not pendentes:
+            await interaction.followup.send("Nada pendente na fila de classes.", ephemeral=True)
+            return
+        classificadas = 0
+        falhas = 0
+        for personagem in pendentes:
+            classe, _categoria = await gacha.revelar_classe(personagem)
+            if classe:
+                classificadas += 1
+            else:
+                falhas += 1
+                await asyncio.to_thread(colecao_db.marcar_falha_classificacao, personagem["id"])
+        await interaction.followup.send(f"{len(pendentes)} verificadas: {classificadas} classificadas e {falhas} movidas para revisão.", ephemeral=True)
+
+    @discord.ui.button(label="Tentar falhas", emoji="⚠️", style=discord.ButtonStyle.secondary, row=1)
+    async def validar_falhas(self, interaction, _button):
+        if not await self._autor(interaction): return
+        await interaction.response.defer(ephemeral=True)
+        pendentes = await asyncio.to_thread(colecao_db.personagens_possuidos_sem_classe, 100, True)
+        for personagem in pendentes:
+            if not (await gacha.revelar_classe(personagem))[0]:
+                await asyncio.to_thread(colecao_db.marcar_falha_classificacao, personagem["id"])
+        await interaction.followup.send(f"Tentativa concluída para {len(pendentes)} falha(s).", ephemeral=True)
+
+    @discord.ui.button(label="Catálogo não adquirido", emoji="📚", style=discord.ButtonStyle.secondary, row=1)
+    async def validar_catalogo(self, interaction, _button):
+        if not await self._autor(interaction): return
+        await interaction.response.defer(ephemeral=True)
+        pendentes = await asyncio.to_thread(colecao_db.personagens_nao_adquiridos_sem_classe, 100)
+        for personagem in pendentes:
+            if not (await gacha.revelar_classe(personagem))[0]:
+                await asyncio.to_thread(colecao_db.marcar_falha_classificacao, personagem["id"])
+        await interaction.followup.send(f"Catálogo: {len(pendentes)} personagem(ns) processada(s).", ephemeral=True)
+
+
+class _ViewAdminPandora(discord.ui.View):
+    def __init__(self, guild_id, autor_id):
+        super().__init__(timeout=300)
+        self.guild_id = guild_id
+        self.autor_id = str(autor_id)
+
+    async def _autor(self, interaction):
+        if str(interaction.user.id) != self.autor_id:
+            await interaction.response.send_message("Este painel pertence a outro administrador.", ephemeral=True)
+            return False
+        return True
+
+    @discord.ui.button(label="Limites do ciclo", emoji="🎲", style=discord.ButtonStyle.primary, row=0)
+    async def limites(self, interaction, _button):
+        if await self._autor(interaction):
+            await interaction.response.send_modal(_ModalLimitesPandora(self.guild_id, colecao_db.obter_configuracao_colecao(self.guild_id)))
+
+    @discord.ui.button(label="Progressão", emoji="📈", style=discord.ButtonStyle.success, row=0)
+    async def progressao(self, interaction, _button):
+        if await self._autor(interaction):
+            await interaction.response.send_modal(_ModalProgressaoPandora(self.guild_id, colecao_db.obter_configuracao_colecao(self.guild_id)))
+
+    @discord.ui.button(label="Cards e puxadas", emoji="🃏", style=discord.ButtonStyle.primary, row=0)
+    async def cards(self, interaction, _button):
+        if await self._autor(interaction):
+            await interaction.response.send_modal(_ModalCardsPandora(self.guild_id, colecao_db.obter_configuracao_colecao(self.guild_id)))
+
+    @discord.ui.button(label="Alternar NSFW", emoji="🔞", style=discord.ButtonStyle.secondary, row=1)
+    async def nsfw(self, interaction, _button):
+        if not await self._autor(interaction):
+            return
+        config = colecao_db.obter_configuracao_colecao(self.guild_id)
+        ativo = not config["nsfw_permitido"]
+        colecao_db.definir_nsfw_permitido(self.guild_id, ativo)
+        await interaction.response.send_message(f"Conteúdo NSFW {'ligado' if ativo else 'desligado'}.", ephemeral=True)
+
+    @discord.ui.button(label="Cooldown de batalha", emoji="⚔️", style=discord.ButtonStyle.secondary, row=1)
+    async def cooldown_batalha(self, interaction, _button):
+        if await self._autor(interaction):
+            await interaction.response.send_modal(_ModalCooldownBatalhaPandora(self.guild_id, colecao_db.obter_configuracao_colecao(self.guild_id)))
+
+    @discord.ui.button(label="World Boss", emoji="🐉", style=discord.ButtonStyle.primary, row=1)
+    async def worldboss(self, interaction, _button):
+        if await self._autor(interaction):
+            await interaction.response.send_modal(_ModalWorldBossPandora(self.guild_id, colecao_db.obter_configuracao_colecao(self.guild_id)))
+
+    @discord.ui.button(label="Bloquear série", emoji="🚫", style=discord.ButtonStyle.secondary, row=2)
+    async def bloquear_serie(self, interaction, _button):
+        if await self._autor(interaction):
+            await interaction.response.send_modal(_ModalSeriePandora(self.guild_id, True))
+
+    @discord.ui.button(label="Desbloquear série", emoji="✅", style=discord.ButtonStyle.secondary, row=2)
+    async def desbloquear_serie(self, interaction, _button):
+        if await self._autor(interaction):
+            await interaction.response.send_modal(_ModalSeriePandora(self.guild_id, False))
+
+    @discord.ui.button(label="Resetar ações", emoji="🔄", style=discord.ButtonStyle.secondary, row=2)
+    async def resetar_acoes(self, interaction, _button):
+        if await self._autor(interaction):
+            await interaction.response.send_modal(_ModalResetarAcoesPandora(self.guild_id))
+
+    @discord.ui.button(label="Dar personagem", emoji="🎁", style=discord.ButtonStyle.secondary, row=2)
+    async def dar_personagem(self, interaction, _button):
+        if await self._autor(interaction):
+            await interaction.response.send_message("Escolha quem vai receber:", view=_ViewDarPersonagem(interaction.guild), ephemeral=True)
+
+    @discord.ui.button(label="Definir Afinidade", emoji="💞", style=discord.ButtonStyle.secondary, row=2)
+    async def definir_afinidade(self, interaction, _button):
+        if await self._autor(interaction):
+            await interaction.response.send_modal(_ModalPersonagemAdminPandora(self.guild_id))
+
+    async def _processar_classes(self, interaction, apenas_falhas=False, catalogo=False):
+        await interaction.response.defer(ephemeral=True)
+        if catalogo:
+            pendentes = await asyncio.to_thread(colecao_db.personagens_nao_adquiridos_sem_classe, 100)
+        else:
+            pendentes = await asyncio.to_thread(colecao_db.personagens_possuidos_sem_classe, 100, apenas_falhas)
+        sucesso = falhas = 0
+        for personagem in pendentes:
+            if (await gacha.revelar_classe(personagem))[0]: sucesso += 1
+            else:
+                falhas += 1
+                await asyncio.to_thread(colecao_db.marcar_falha_classificacao, personagem["id"])
+        restantes = await asyncio.to_thread(colecao_db.contar_personagens_possuidos_sem_classe, apenas_falhas) if not catalogo else "?"
+        await interaction.followup.send(f"{len(pendentes)} verificadas: {sucesso} classificadas, {falhas} falharam. Restam {restantes} na fila.", ephemeral=True)
+
+    @discord.ui.button(label="Validar sem classe", emoji="🔎", style=discord.ButtonStyle.secondary, row=3)
+    async def validar_normais(self, interaction, _button):
+        if await self._autor(interaction): await self._processar_classes(interaction)
+
+    @discord.ui.button(label="Revalidar falhas", emoji="⚠️", style=discord.ButtonStyle.secondary, row=3)
+    async def validar_falhas(self, interaction, _button):
+        if await self._autor(interaction): await self._processar_classes(interaction, apenas_falhas=True)
+
+    @discord.ui.button(label="Validar não adquiridas", emoji="📚", style=discord.ButtonStyle.secondary, row=3)
+    async def validar_catalogo(self, interaction, _button):
+        if await self._autor(interaction): await self._processar_classes(interaction, catalogo=True)
 
 
 def _registrar_slash_moderacao(tree):
@@ -562,7 +1068,7 @@ def _registrar_slash_musica(tree):
         servidor, não `_somente_dono` - conteúdo/config do jogo varia por
         servidor) - repetida aqui (não importada de `_registrar_slash_colecao`)
         porque só a instância "musica" registra `/musica_admin` (papel
-        "completo" nunca tem `/musica`/`/caos`, ver `iniciar_bot`)."""
+        "principal" nunca tem `/musica`/`/caos`, ver `iniciar_bot`)."""
         eh_admin = isinstance(interaction.user, discord.Member) and interaction.user.guild_permissions.administrator
         if interaction.guild is None or not eh_admin:
             await interaction.response.send_message("Só administradores do servidor podem mudar essa configuração.", ephemeral=True)
@@ -730,7 +1236,7 @@ def _registrar_slash_colecao(tree):
         # 🔥 Favoritas protegem contra ação destrutiva ACIDENTAL (Seção 15) -
         # exige confirmação extra, mas nunca bloqueia de vez (é uma escolha
         # válida do dono, diferente do bloqueio duro do Merge).
-        if colecao_db.eh_favorita(interaction.guild.id, interaction.user.id, id_personagem) and not confirmar:
+        if colecao_db.esta_na_wishlist(interaction.guild.id, interaction.user.id, id_personagem) and not confirmar:
             await interaction.response.send_message(
                 "Essa personagem está marcada como favorita - use `confirmar:true` se realmente quer divorciar.", ephemeral=True,
             )
@@ -751,10 +1257,10 @@ def _registrar_slash_colecao(tree):
             await interaction.response.send_message("Você não tem essa personagem nesse servidor.", ephemeral=True)
             return
         if favoritar:
-            colecao_db.favoritar(interaction.guild.id, interaction.user.id, id_personagem)
-            await interaction.response.send_message("⭐ Marcada como favorita.", ephemeral=True)
+            ok, mensagem = colecao_db.wishlist_adicionar(interaction.guild.id, interaction.user.id, id_personagem)
+            await interaction.response.send_message(f"{'⭐' if ok else '⚠️'} {mensagem}", ephemeral=True)
         else:
-            colecao_db.desfavoritar(interaction.guild.id, interaction.user.id, id_personagem)
+            colecao_db.wishlist_remover(interaction.guild.id, interaction.user.id, id_personagem)
             await interaction.response.send_message("Desmarcada como favorita.", ephemeral=True)
 
     @app_commands.command(name="ranking", description="Mostra quem tem mais personagens reivindicadas nesse servidor")
@@ -776,8 +1282,11 @@ def _registrar_slash_colecao(tree):
         if personagem is None:
             await interaction.response.send_message("Não achei nenhum personagem com esse #id.", ephemeral=True)
             return
-        colecao_db.wishlist_adicionar(interaction.guild.id, interaction.user.id, id_personagem)
-        await interaction.response.send_message(f"{personagem['nome']} adicionada à sua wishlist.", ephemeral=True)
+        ok, mensagem = colecao_db.wishlist_adicionar(interaction.guild.id, interaction.user.id, id_personagem)
+        await interaction.response.send_message(
+            f"{'⭐' if ok else '⚠️'} {mensagem if not ok else personagem['nome'] + ' adicionada à sua Wishlist.'}",
+            ephemeral=True,
+        )
 
     @grupo_wishlist.command(name="remover", description="Remove um personagem da sua wishlist (use o #id)")
     async def _wishlist_remover(interaction: discord.Interaction, id_personagem: int):
@@ -795,7 +1304,10 @@ def _registrar_slash_colecao(tree):
         personagens = colecao_db.wishlist_listar(interaction.guild.id, interaction.user.id)
         await interaction.response.send_message(consulta.formatar_wishlist(personagens), ephemeral=True)
 
-    grupo_admin = app_commands.Group(name="pandora_admin", description="Configuração do colecionador nesse servidor")
+    # Os comandos antigos continuam como handlers internos durante a
+    # transição, mas o grupo não é mais registrado na barra do Discord.
+    # A única entrada pública é o painel privado abaixo.
+    grupo_admin = app_commands.Group(name="pandora_admin_legacy", description="Handlers internos do painel Pandora")
 
     async def _somente_admin_do_servidor_colecao(interaction: discord.Interaction):
         """Mesma régua de `/pandora_admin nsfw` original (renomeado de
@@ -808,6 +1320,16 @@ def _registrar_slash_colecao(tree):
             await interaction.response.send_message("Só administradores do servidor podem mudar essa configuração.", ephemeral=True)
             return False
         return True
+
+    @app_commands.command(name="pandora_admin", description="Abre o painel de administração do Pandora")
+    async def _pandora_admin(interaction: discord.Interaction):
+        if not await _somente_admin_do_servidor_colecao(interaction):
+            return
+        await interaction.response.send_message(
+            _texto_configuracao_pandora(interaction.guild),
+            view=_ViewAdminPandora(interaction.guild.id, interaction.user.id),
+            ephemeral=True,
+        )
 
     @grupo_admin.command(name="nsfw", description="Liga/desliga personagens NSFW nos rolls desse servidor")
     async def _admin_nsfw(interaction: discord.Interaction, ativo: bool):
@@ -832,6 +1354,21 @@ def _registrar_slash_colecao(tree):
         colecao_db.definir_configuracao_colecao(interaction.guild.id, "claims_por_ciclo", quantidade)
         colecao_db.definir_configuracao_colecao(interaction.guild.id, "ciclo_claims_minutos", minutos)
         await interaction.response.send_message(f"Claims ajustados: {quantidade} a cada {minutos} min por jogador.", ephemeral=True)
+
+    @grupo_admin.command(name="tetos_progressao", description="Define os tetos dos bônus de Rolls e Claims ganhos pela Progressão")
+    async def _admin_tetos_progressao(
+        interaction: discord.Interaction,
+        rolls: app_commands.Range[int, 0, 1000],
+        claims: app_commands.Range[int, 0, 100],
+    ):
+        if not await _somente_admin_do_servidor_colecao(interaction):
+            return
+        colecao_db.definir_configuracao_colecao(interaction.guild.id, "teto_bonus_rolls_progressao", rolls)
+        colecao_db.definir_configuracao_colecao(interaction.guild.id, "teto_bonus_claims_progressao", claims)
+        await interaction.response.send_message(
+            f"Tetos de Progressão ajustados: +{rolls} Rolls/h e +{claims} Claims/h.",
+            ephemeral=True,
+        )
 
     @grupo_admin.command(name="duracao_card", description="Define por quantos segundos o botão de Reivindicar fica ativo")
     async def _admin_duracao_card(interaction: discord.Interaction, segundos: app_commands.Range[int, 10, 86400]):
@@ -881,6 +1418,7 @@ def _registrar_slash_colecao(tree):
             f"- NSFW: {'liberado' if config['nsfw_permitido'] else 'desabilitado'}\n"
             f"- Rolls: {config['rolls_por_ciclo']} a cada {config['ciclo_rolls_minutos']} min\n"
             f"- Claims: {config['claims_por_ciclo']} a cada {config['ciclo_claims_minutos']} min\n"
+            f"- Tetos da Progressão: +{config['teto_bonus_rolls_progressao']} Rolls/h · +{config['teto_bonus_claims_progressao']} Claims/h\n"
             f"- Duração do card pra reivindicar: {config['duracao_card_segundos']}s\n"
             f"- Máximo de personagens por puxada: {config['max_rolls_por_comando']}\n"
             f"- Chance de wish-roll: {round(config['chance_wish_roll'] * 100)}%\n"
@@ -930,6 +1468,54 @@ def _registrar_slash_colecao(tree):
             await interaction.followup.send(erro, ephemeral=True)
             return
         await interaction.followup.send(embed=embed)
+
+    @grupo_admin.command(name="validar_classes", description="Verifica/classifica personagens já reivindicadas que ainda não têm classe definida")
+    @app_commands.describe(apenas_falhas="Revisar só quem falhou antes (fila separada), em vez da fila normal")
+    async def _admin_validar_classes(interaction: discord.Interaction, apenas_falhas: bool = False):
+        """2026-09-03, pedido do usuário: "Validar Classes, e se todos
+        personagens coletados tem" - achado ao investigar: o Merge nunca
+        chamava `revelar_classe` (corrigido em `pandora.paineis.
+        _ViewEscolherMergeAlvo._escolher`), então personagens recebidas só
+        por Merge podiam ficar sem classe pra sempre. Este comando varre o
+        que sobrou classless (de ANTES do fix, ou de uma GAIA que estava
+        fora do ar na hora) e tenta classificar cada uma agora - bounded a
+        100 por chamada (2026-09-03, "Aumenta o limite... para 100", era 20)
+        pra nunca estourar o prazo de resposta do Discord, mesmo sendo uma
+        chamada de rede (GAIA) por personagem.
+
+        🔥 `apenas_falhas` (2026-09-03, "coloca algo p as q derem erro n
+        voltarem p fila, validamos elas depois. Voce so tem q conseguir
+        diferenciar elas depois") - quem falha AQUI (GAIA fora do ar,
+        classificação inválida) é marcado (`colecao_db.
+        marcar_falha_classificacao`) e sai da fila PADRÃO - sem isso, uma
+        sequência de falhas nos primeiros N (por `#id`) travava a fila pra
+        sempre nos mesmos, nunca avançando pros que teriam dado certo.
+        Rodar com `apenas_falhas:true` mais tarde revisita só quem ficou
+        pra trás, sem misturar com a fila nova."""
+        if not await _somente_admin_do_servidor_colecao(interaction):
+            return
+        await interaction.response.defer(ephemeral=True)
+        pendentes = await asyncio.to_thread(colecao_db.personagens_possuidos_sem_classe, 100, apenas_falhas)
+        if not pendentes:
+            fila = "de revisão manual" if apenas_falhas else "normal"
+            await interaction.followup.send(f"✅ Nada pendente na fila {fila}.", ephemeral=True)
+            return
+        classificadas = 0
+        falhas = []
+        for personagem in pendentes:
+            classe, _categoria = await gacha.revelar_classe(personagem)
+            if classe:
+                classificadas += 1
+            else:
+                falhas.append(personagem)
+                await asyncio.to_thread(colecao_db.marcar_falha_classificacao, personagem["id"])
+        total_fila_normal = await asyncio.to_thread(colecao_db.contar_personagens_possuidos_sem_classe, False)
+        total_revisao_manual = await asyncio.to_thread(colecao_db.contar_personagens_possuidos_sem_classe, True)
+        texto = f"🔎 {len(pendentes)} verificada(s): {classificadas} classificada(s) agora, {len(falhas)} falha(s)."
+        if falhas:
+            texto += "\nFalharam (movidas pra revisão manual - `apenas_falhas:true`): " + ", ".join(p["nome"] for p in falhas[:10])
+        texto += f"\nFila normal restante: {total_fila_normal} · Revisão manual (falhas antigas): {total_revisao_manual}."
+        await interaction.followup.send(texto, ephemeral=True)
 
     @grupo_admin.command(name="definir_afinidade", description="Define a Afinidade de alguém com uma personagem (0-10), sem esperar reencontros")
     async def _admin_definir_afinidade(interaction: discord.Interaction, membro: discord.Member, id_personagem: int, valor: int):
@@ -984,37 +1570,6 @@ def _registrar_slash_colecao(tree):
         colecao_db.limpar_equipe(interaction.guild.id, interaction.user.id, "party")
         await interaction.response.send_message("Party esvaziada.", ephemeral=True)
 
-    grupo_vitrine = app_commands.Group(name="vitrine", description="Mostruário público da sua coleção")
-
-    @grupo_vitrine.command(name="ver", description="Mostra a vitrine de você ou de outro membro")
-    async def _vitrine_ver(interaction: discord.Interaction, membro: discord.Member = None):
-        if interaction.guild is None:
-            await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
-            return
-        alvo = membro or interaction.user
-        equipe = colecao_db.obter_equipe(interaction.guild.id, alvo.id, "vitrine")
-        await interaction.response.send_message(consulta.formatar_equipe(f"Vitrine de {alvo.display_name}", equipe, colecao_db.MAX_POSICOES_EQUIPE))
-
-    @grupo_vitrine.command(name="definir", description="Coloca uma personagem sua num slot da vitrine (1-5)")
-    async def _vitrine_definir(interaction: discord.Interaction, slot: app_commands.Range[int, 1, 5], id_personagem: int):
-        await _definir_slot_equipe(interaction, "vitrine", slot, id_personagem, "Vitrine atualizada")
-
-    @grupo_vitrine.command(name="remover", description="Esvazia um slot da sua vitrine")
-    async def _vitrine_remover(interaction: discord.Interaction, slot: app_commands.Range[int, 1, 5]):
-        if interaction.guild is None:
-            await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
-            return
-        colecao_db.remover_posicao_equipe(interaction.guild.id, interaction.user.id, "vitrine", slot)
-        await interaction.response.send_message(f"Slot {slot} da vitrine esvaziado.", ephemeral=True)
-
-    @grupo_vitrine.command(name="limpar", description="Esvazia toda a sua vitrine")
-    async def _vitrine_limpar(interaction: discord.Interaction):
-        if interaction.guild is None:
-            await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
-            return
-        colecao_db.limpar_equipe(interaction.guild.id, interaction.user.id, "vitrine")
-        await interaction.response.send_message("Vitrine esvaziada.", ephemeral=True)
-
     grupo_loja = app_commands.Group(name="loja", description="Compre personagens livres ou garanta a raridade do seu próximo roll")
 
     @grupo_loja.command(name="ver", description="Mostra uma amostra de personagens livres pra comprar numa raridade (1-5)")
@@ -1049,20 +1604,28 @@ def _registrar_slash_colecao(tree):
             f"Garantido: seu próximo roll vai ser {raridade}⭐ ou mais (custou {preco} WiShards).", ephemeral=True,
         )
 
-    @grupo_loja.command(name="upgrade", description="Compra o próximo nível de rolls máximos (+5 permanente por nível, até 5 níveis)")
+    @grupo_loja.command(name="upgrade", description="Compra o próximo nível de rolls máximos (+5 permanente por nível, sem teto)")
     async def _loja_upgrade(interaction: discord.Interaction):
         if interaction.guild is None:
             await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
             return
-        ok, mensagem = colecao_db.comprar_upgrade_rolls(interaction.guild.id, interaction.user.id)
+        # 🔥 `comprar_upgrade_rolls_ate` (2026-09-03) - o upgrade perdeu o
+        # teto de nível 5; este comando antigo (1 nível por clique) agora
+        # só passa "nível atual + 1" como alvo pra manter o mesmo
+        # comportamento de antes - o botão "Upgrade de rolls" da Loja
+        # (`/pandora` -> 🛒 Loja) é quem ganhou o dropdown de pular vários
+        # níveis de uma vez.
+        proximo_nivel = colecao_db.nivel_upgrade_rolls(interaction.guild.id, interaction.user.id) + 1
+        ok, mensagem = colecao_db.comprar_upgrade_rolls_ate(interaction.guild.id, interaction.user.id, proximo_nivel)
         await interaction.response.send_message(mensagem, ephemeral=not ok)
 
-    @grupo_loja.command(name="upgrade_claims", description="Compra o próximo nível de claims máximos (+1 permanente por nível, até 5 níveis)")
+    @grupo_loja.command(name="upgrade_claims", description="Compra o próximo nível de claims máximos (+1 permanente por nível, sem teto)")
     async def _loja_upgrade_claims(interaction: discord.Interaction):
         if interaction.guild is None:
             await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
             return
-        ok, mensagem = colecao_db.comprar_upgrade_claims(interaction.guild.id, interaction.user.id)
+        proximo_nivel = colecao_db.nivel_upgrade_claims(interaction.guild.id, interaction.user.id) + 1
+        ok, mensagem = colecao_db.comprar_upgrade_claims_ate(interaction.guild.id, interaction.user.id, proximo_nivel)
         await interaction.response.send_message(mensagem, ephemeral=not ok)
 
     @app_commands.command(name="merge", description="Sacrifica 5 personagens da mesma raridade por 1 aleatória da raridade seguinte")
@@ -1121,11 +1684,10 @@ def _registrar_slash_colecao(tree):
     tree.add_command(_ranking)
     tree.add_command(_merge)
     tree.add_command(grupo_wishlist)
-    tree.add_command(grupo_admin)
+    tree.add_command(_pandora_admin)
     tree.add_command(grupo_loja)
     tree.add_command(grupo_trocar)
     tree.add_command(grupo_party)
-    tree.add_command(grupo_vitrine)
 
 
 def _registrar_slash_caos(tree):
@@ -1157,7 +1719,7 @@ def _registrar_slash_caos(tree):
     tree.add_command(_caos)
 
 
-async def iniciar_bot(token, papel="completo"):
+async def iniciar_bot(token, papel="principal"):
     """Sobe o bot e fica ouvindo DMs e canais de servidor até o processo
     encerrar. Não bloqueia quem chamou além do próprio `await` - use
     `asyncio.create_task` pra rodar em paralelo com o servidor HTTP
@@ -1170,7 +1732,7 @@ async def iniciar_bot(token, papel="completo"):
     conta de "dono"/DM pra proteger."""
     global _client_atual, _loop_atual, _slash_ja_sincronizado
     _loop_atual = asyncio.get_running_loop()
-    completo = papel == "completo"
+    principal = papel == "principal"
 
     # 🔥 2026-08-25 - achado real (ela entrava na call mas não ouvia nem falava
     # nada): discord.py EMBUTE o DLL do libopus (`discord/bin/libopus-0.x64.dll`),
@@ -1187,14 +1749,14 @@ async def iniciar_bot(token, papel="completo"):
             print(" [SISTEMA] ATENÇÃO: não consegui carregar o libopus - Intérprete/Tutora por voz não vão funcionar (entra na call, mas não ouve nem fala nada).")
 
     intents = discord.Intents.default()
-    if completo:
+    if principal:
         intents.message_content = True  # 🔥 texto livre/webhook pra GAIA - papel "musica" não conversa, não precisa
         intents.members = True  # 🔥 exigido pra moderação de membro (kick/ban/timeout/cargo) funcionar de forma confiável
     intents.voice_states = True  # 🔥 Intérprete/Tutora/Música - detectar canal esvaziando (on_voice_state_update), vale pros dois papéis
 
     client = discord.Client(intents=intents)
     tree = app_commands.CommandTree(client)
-    if completo:
+    if principal:
         _registrar_slash_moderacao(tree)
         _registrar_slash_exportar(tree, token)
         _registrar_slash_voz(tree)
@@ -1203,7 +1765,7 @@ async def iniciar_bot(token, papel="completo"):
     else:
         # 🔥 Exclusivo do papel "musica" (2026-08-26, achado pelo usuário: "pq
         # a gaia e a eris tem /caos? N deveria ser apenas da eris?") - antes
-        # registrava sem checar papel nenhum, então a instância "completo"
+        # registrava sem checar papel nenhum, então a instância "principal"
         # também tinha /musica/caos: um usuário podia acidentalmente tocar
         # música NELA (ocupando o único slot de voz que ela tem) e perder
         # Conversa/Intérprete/Tutora até parar a música - exatamente o
@@ -1213,37 +1775,47 @@ async def iniciar_bot(token, papel="completo"):
 
     @client.event
     async def on_ready():
-        global _client_atual, _slash_ja_sincronizado, _auto_colecionador, _auto_colecionador_usuarios, _sincronizador_catalogo, _scheduler_worldboss, _scheduler_batalha
+        global _client_atual, _slash_ja_sincronizado, _auto_colecionador, _auto_colecionador_usuarios, _sincronizador_catalogo, _scheduler_worldboss, _scheduler_batalha, _musica_retomada
         _client_atual = client
         mensagens.definir_client(client)
         print(f" [ERIS] Bot conectado como {client.user} (papel \"{papel}\").")
-        if completo:
+        if principal:
             db.salvar_guilds_cache(_guilds_para_cache(client))  # 🔥 papel "musica" não usa `db` (sem moderação/donos, ver eris/main.py)
+        # 🔥 Resume sozinha a música que estava tocando quando o processo
+        # caiu/reiniciou (2026-09-04, pedido do usuário: "qnd vc reinicia,
+        # a eris para de tocar musica, e n volta mais... tem como pelo
+        # menos fazer ela voltar a tocar musica q estava tocando qnd
+        # voltar?") - só no papel "musica" (onde vivem as sessões de
+        # verdade), 1x por processo (`on_ready` pode disparar de novo numa
+        # reconexão do discord.py - não repetir isso a cada reconexão).
+        if not principal and not _musica_retomada:
+            _musica_retomada = True
+            asyncio.create_task(musica.retomar_sessoes_persistidas(client))
         # 🔥 Auto-colecionador (2026-08-29) - só inicia UMA vez por processo,
         # `on_ready` pode disparar de novo numa reconexão do discord.py.
         if _auto_colecionador is None:
             _auto_colecionador = auto_colecionador.AutoColecionador(client, papel)
         # 🔥 Modo Auto-coleta POR USUÁRIO (2026-08-30) - só na instância
-        # "completo" (onde vive o toggle em `paineis.ViewPerfilAcoes`), roda
+        # "principal" (onde vive o toggle em `paineis.ViewPerfilAcoes`), roda
         # em horário PRÓPRIO (:50/:55), independente do da conta de bot.
-        if completo and _auto_colecionador_usuarios is None:
+        if principal and _auto_colecionador_usuarios is None:
             _auto_colecionador_usuarios = auto_colecionador.AutoColecionadorUsuarios(client)
         # 🔥 Sincronização contínua do catálogo (2026-08-29) - só na instância
-        # "completo", rodar nas duas seria download/reimportação duplicados
+        # "principal", rodar nas duas seria download/reimportação duplicados
         # à toa (upsert já deixaria seguro, mas sem ganho nenhum).
-        if completo and _sincronizador_catalogo is None:
+        if principal and _sincronizador_catalogo is None:
             _sincronizador_catalogo = sincronizador.SincronizadorCatalogo(client)
-        # 🔥 World Boss (2026-09-01) - só na instância "completo" (mesmo
+        # 🔥 World Boss (2026-09-01) - só na instância "principal" (mesmo
         # critério de `AutoColecionadorUsuarios` - é onde vive o painel
         # `/pandora` -> 🐉 World Boss); spawna nos 4 horários fixos e conduz
         # inscrições/turnos sozinho, sem depender de nenhum comando.
-        if completo and _scheduler_worldboss is None:
+        if principal and _scheduler_worldboss is None:
             _scheduler_worldboss = worldboss.SchedulerWorldBoss(client)
         # 🔥 Auto-Defesa de Batalha por timeout (2026-09-02, pedido do
         # usuário: "Se o desafiado n responder em 10min, considera essa
-        # defesa automatica") - só na instância "completo" (mesmo critério
+        # defesa automatica") - só na instância "principal" (mesmo critério
         # dos outros schedulers - é onde vive o hub "⚔️ PvP").
-        if completo and _scheduler_batalha is None:
+        if principal and _scheduler_batalha is None:
             _scheduler_batalha = paineis.SchedulerBatalha(client)
         if not _slash_ja_sincronizado:
             try:
@@ -1253,7 +1825,7 @@ async def iniciar_bot(token, papel="completo"):
             except Exception as e:
                 print(f" [ERIS] Erro ao sincronizar slash commands: {e}")
 
-    if completo:
+    if principal:
         @client.event
         async def on_guild_join(guild):
             db.salvar_guilds_cache(_guilds_para_cache(client))
@@ -1281,21 +1853,21 @@ async def iniciar_bot(token, papel="completo"):
     # PRÓPRIAS mensagens" não é como o Discord funciona - `on_raw_reaction_
     # add` dispara pra QUALQUER bot conectado ao canal, reagindo em
     # QUALQUER mensagem dele, não só nas que aquele bot específico postou.
-    # Como as duas instâncias (completo/música) ficam no MESMO servidor e
+    # Como as duas instâncias (principal/música) ficam no MESMO servidor e
     # compartilham o mesmo `pandora.db`, as duas viam o card pendente e as
     # duas tentavam processar o claim - só uma vencia a corrida (`db.
     # reivindicar` é atômico), mas a outra (a de música, que nem deveria
     # participar disso) mandava uma mensagem de erro/duplicada mesmo assim.
-    # Colecionador é feature só do papel "completo" - agora só registra
+    # Colecionador é feature só do papel "principal" - agora só registra
     # aqui dentro, igual `on_guild_join`/`on_guild_remove` acima.
-    if completo:
+    if principal:
         @client.event
         async def on_raw_reaction_add(payload):
             await gacha.processar_reacao_claim(client, payload)
 
     # 🔥 Papel "musica" não registra `on_message`/o pipeline de texto livre -
     # bot dedicado só ao grupo `/musica`, sem webhook pra GAIA, sem DM/menção.
-    if completo:
+    if principal:
         async def _responder(message, eh_dono, remetente_id, texto):
             try:
                 async with message.channel.typing():

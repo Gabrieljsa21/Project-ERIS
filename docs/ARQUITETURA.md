@@ -181,7 +181,7 @@ Guardado em `data/musica_canal_restrito.json` (`{guild_id: canal_id}`),
 NÃO em `eris.db` - só a instância "musica" (papel dedicado, ver
 "Múltiplas instâncias" abaixo) registra `/musica`/`/musica_admin`/`/caos`,
 e essa instância NUNCA chama `db.inicializar()` (`eris/main.py` - `db`/
-ponte HTTP são exclusivos do papel "completo"). Configurável por
+ponte HTTP são exclusivos do papel "principal"). Configurável por
 `/musica_admin canal <#canal>` (permissão de administrador do servidor,
 mesma régua de `/colecao_admin`, checada de novo aqui - não reaproveitada
 de `_registrar_slash_colecao` porque só "musica" registra este grupo) -
@@ -425,7 +425,7 @@ passou a reatribuir `sessao.text_channel` toda vez que um comando roda
 numa sessão JÁ ativa (antes só gravava na criação).
 
 Mesmo fix aplicado ao Colecionador (agora em
-[Project-PANDORA](../Project-PANDORA), ver `ARQUITETURA.md` de lá,
+[Project-PANDORA](../../Project-PANDORA), ver `ARQUITETURA.md` de lá,
 `gacha.enviar_resultados`) - telas ephemeral (perfil, wishlist, trocas,
 Prova de Soulmate) ficam de fora, Discord não permite redirecionar
 mensagens ephemeral pra outro canal.
@@ -443,7 +443,7 @@ a rodar (nenhum código de limpeza roda num kill duro), então o Discord só
 derruba essa presença de voz quando o PRÓPRIO timeout dele expira
 (minutos, não imediato) - diferente da presença de TEXTO (online/offline),
 que cai rápido via perda de heartbeat do gateway. Confirmado via PID: os 4
-processos do ERIS (completo + música, launcher uv + processo real) trocam
+processos do ERIS (principal + música, launcher uv + processo real) trocam
 de PID a cada restart - o kill funciona de verdade, não é processo zumbi.
 Estado da sessão (`_sessoes_musica`, em memória) também se perde no
 restart - o ERIS novo não sabe que "estava" numa call, não reconecta
@@ -513,7 +513,7 @@ bastante (Música e voz já eram mutuamente exclusivas DENTRO de uma
 instância) pra isso ser só um parâmetro de papel, não reescrita.
 
 - **`eris/main.py`** detecta o papel por argv (`python -m eris.main` =
-  "completo", `python -m eris.main musica` = "musica") - não por variável
+  "principal", `python -m eris.main musica` = "musica") - não por variável
   de ambiente, pra não colidir com o `override=True` do `load_dotenv` (uma
   variável setada no processo pai venceria o `.env` local em silêncio,
   mesmo bug já corrigido no HESTIA/MOIRAI/GAIA). Papel "musica" carrega
@@ -521,36 +521,36 @@ instância) pra isso ser só um parâmetro de papel, não reescrita.
   de `.env`, usa uma porta de instância única separada
   (`PORTA_INSTANCIA_UNICA_MUSICA = 8779`, `eris/config.py`) e PULA
   `db.inicializar()`/a ponte HTTP (`api_bridge.py`, porta 8772 já ocupada
-  pela instância "completo") - sem moderação/donos, a GAIA nunca precisa
+  pela instância "principal") - sem moderação/donos, a GAIA nunca precisa
   chamar DENTRO dessa instância, só ela chamando a GAIA
   (`gaia_webhook.pedir_proxima_musica`).
-- **`eris/bot.py::iniciar_bot(token, papel="completo")`** condiciona no
+- **`eris/bot.py::iniciar_bot(token, papel="principal")`** condiciona no
   papel: intents privilegiadas (`message_content`/`members`) e os grupos
   `/moderacao`, `/mensagem`, `/canal`, `/cargo`, `/exportar`,
   `/conversar`, `/interprete`, `/tutora`, além do handler `on_message`
   (texto livre/webhook pra GAIA) e `on_guild_join`/`on_guild_remove`
-  (cache de guilds, usa `db`) só existem no papel "completo". `/musica`/
+  (cache de guilds, usa `db`) só existem no papel "principal". `/musica`/
   `/caos` são o INVERSO - exclusivos do papel "musica" (achado pelo
   usuário 2026-08-26: "pq a gaia e a eris tem /caos? N deveria ser apenas
   da eris?" - antes registrava sem checar papel, então a instância
-  "completo" também tinha os comandos, e um clique errado nela ocupava o
+  "principal" também tinha os comandos, e um clique errado nela ocupava o
   único slot de voz dela com música, derrubando Conversa/Intérprete/Tutora
   até parar - exatamente o que a 2ª instância existe pra evitar).
   `on_voice_state_update` (sair sozinho de call vazia) é o único que vale
   pros dois papéis de propósito - já era agnóstico, checa `voz_call.
-  canal_ativo` OU `musica.canal_ativo` (na instância "completo", `musica.
+  canal_ativo` OU `musica.canal_ativo` (na instância "principal", `musica.
   canal_ativo` nunca é diferente de None, já que ela não cria sessão de
   música nenhuma - checagem inofensiva, não removida por simplicidade).
 - **Validado numa call real (2026-08-26)**: as 2 instâncias JUNTAS no
   MESMO canal - `ERIS#0983` tocando música (`/musica tocar`) enquanto a
-  instância "completo" respondia por voz no Modo Conversa ao mesmo tempo,
+  instância "principal" respondia por voz no Modo Conversa ao mesmo tempo,
   confirmado pelo usuário ("consegui usar as 2 ao msm tempo, e gaia me
   respondeu... e a eris tocando musica"). GAIA sobe as duas sozinha no
   boot desde então (`garantir_eris_rodando`/`garantir_eris_musica_rodando`,
   `Project G.A.I.A/assistant/integrations/iris_bridge.py`).
 - **Decisão de `data/eris.db`**: NÃO compartilhado - a instância "musica"
   nem chama `db.inicializar()`, então não tem tabela nenhuma. Donos/config
-  de roteamento continuam só na instância "completo" (ela decide quem é
+  de roteamento continuam só na instância "principal" (ela decide quem é
   dono pra fins de moderação/DM; `/musica` é aberto a qualquer membro em
   ambas, sem checar `db`).
 
@@ -610,7 +610,7 @@ fim do processamento.
 
 ## Colecionador de Personagens (2026-08-29) - MVP inspirado na Mudae/Fable
 
-🔥 **EXTRAÍDO pro [Project PANDORA](../Project-PANDORA) (2026-08-29, mesmo
+🔥 **EXTRAÍDO pro [Project PANDORA](../../Project-PANDORA) (2026-08-29, mesmo
 dia)** - todo o código descrito nesta seção e nas 3 seguintes (`eris/
 colecao/*`, 14 tabelas `colecao_*` de `eris/db.py`) foi movido pra um repo
 próprio, quando o Colecionador já era a MAIORIA do peso do ERIS (~2.780
@@ -645,7 +645,7 @@ carga do catálogo). A stack não foi copiada (nada de Mongo/Deno).
 
 ### Painel `/waifu` (2026-08-29) - reorganização de comandos inspirada no LegendsAwaken
 
-O bot "completo" chegou a **25 comandos raiz** no seletor `/` do Discord - boa
+O bot "principal" chegou a **25 comandos raiz** no seletor `/` do Discord - boa
 parte (18) só do Colecionador (`/wa /ha /ma /colecao /carteira /personagem
 /populares /colecao_disponiveis /divorciar /favoritar /ranking /merge`
 soltos + `/wishlist /colecao_admin /party /vitrine /loja /trocar` como
@@ -918,12 +918,12 @@ pelo emoji, ambas os bots respondem, tinha q ser so 1")** - o parágrafo
 abaixo tinha uma suposição ERRADA ("cada processo só recebe evento das
 próprias mensagens") - o Discord entrega `on_raw_reaction_add` pra
 QUALQUER bot conectado ao canal, reagindo em QUALQUER mensagem dele, não
-só nas que aquele bot específico postou. Como as instâncias "completo" e
+só nas que aquele bot específico postou. Como as instâncias "principal" e
 "música" ficam no MESMO servidor (compartilhando o mesmo `pandora.db`),
 as duas processavam o MESMO claim - `db.reivindicar` atômico garantia só
 uma vencer a corrida, mas a instância "música" (que nem deveria participar
 de Colecionador) ainda respondia com erro/duplicado mesmo perdendo.
-Corrigido registrando `on_raw_reaction_add` só dentro do `if completo:`
+Corrigido registrando `on_raw_reaction_add` só dentro do `if principal:`
 de `eris/bot.py::iniciar_bot`, igual `on_guild_join`/`on_guild_remove`.
 
 Registro em MEMÓRIA (`gacha._CARDS_REACAO_PENDENTES`, message_id -> {guild_
@@ -1009,7 +1009,7 @@ mas rodará aos XX:30 e escolhe aos XX:35". Módulo novo `eris/colecao/
 auto_colecionador.py` - `AutoColecionador`, instanciado uma vez por
 processo dentro de `on_ready` (`eris/bot.py`), usa `discord.ext.tasks.loop`
 (30s, checando o minuto UTC atual contra `HORARIOS_POR_PAPEL[papel]`) pra
-disparar rolar/decidir sem precisar de scheduler externo. `papel="completo"`
+disparar rolar/decidir sem precisar de scheduler externo. `papel="principal"`
 (conta GAIA) dispara aos `:05`/decide aos `:10`; `papel="musica"` (conta
 ERIS) aos `:30`/`:35` - cada instância só sabe o horário do PRÓPRIO papel,
 nunca do outro.
@@ -1082,7 +1082,7 @@ ranking GLOBAL - não só da página atual - e o número de curtidas).
 do get_waifu era carga ÚNICA (`eris/colecao/importar_get_waifu.py`,
 precisava rodar na mão, ver TODO.md "Roadmap futuro"). Módulo novo `eris/
 colecao/sincronizador.py::SincronizadorCatalogo` - `discord.ext.tasks.loop`
-(1h, checando) só na instância `papel="completo"` (rodar nas duas seria
+(1h, checando) só na instância `papel="principal"` (rodar nas duas seria
 download/reimportação duplicados à toa - upsert por `fonte_id` já deixa
 seguro, mas sem ganho nenhum). Frequência real é SEMANAL (pedido do
 usuário: "Sincronização semanal"), decidida comparando `agora` com
@@ -1196,8 +1196,7 @@ aparece no card do roll (`gacha.montar_embed`), só depois de reivindicada
 (`/colecao`, `/personagem`, `/wishlist listar`, ver `eris/colecao/
 consulta.py::_linha_personagem`).
 
-- **"O ideal não é você fazer isso, é a GAIA"** (pedido explícito do
-  usuário) - o ERIS NUNCA classifica personagem sozinho. `ViewClaimMultiplo.
+- **Classificação feita pela GAIA** (pedido explícito do usuário) - o ERIS NUNCA classifica personagem sozinho. `ViewClaimMultiplo.
   _revelar_classe` (`eris/colecao/gacha.py`), chamado logo após um claim
   vencer, pede pra GAIA via webhook reverso novo (`eris.integrations.
   gaia_webhook.pedir_classe_personagem` -> `POST /eris/colecao_classificar`
@@ -1629,7 +1628,7 @@ na hora, não só teórica.
 
 Pedido original do usuário: "n quero terminais abertos p cd bot online,
 oculta isso. Cria um icone na bandeja qq coisa." - até aqui, as 2 instâncias
-(completo/música) só existiam via `python -m eris.main`/`eris.main musica`
+(principal/música) só existiam via `python -m eris.main`/`eris.main musica`
 digitado direto num terminal (ver README.md, "Uso standalone"), então cada
 uma vivia presa a uma janela de console aberta o tempo todo - fechar a
 janela por engano derrubava o bot, e não tinha jeito de fechar/reiniciar sem
@@ -1642,7 +1641,7 @@ criar apenas 1 contendo as 2". Perguntado se preferia fundir os 2 papéis num
 processo só (1 ícone de verdade) ou manter os 2 processos com só 1 ícone
 visível, o usuário trouxe um dado novo: "esse tanto de mudança na pandora q
 fizemos recentemente, o bot de musica ficava caindo direto. Quero evitar
-isso tbm" - fundir num processo só arriscaria derrubar o "completo" JUNTO
+isso tbm" - fundir num processo só arriscaria derrubar o "principal" JUNTO
 numa queda do "musica" (justo o papel com histórico recente de
 instabilidade), então a solução final manteve o isolamento de processo e
 resolveu as 2 pontas (ícone único + música parar de cair sem se recuperar)
@@ -1669,24 +1668,24 @@ separadamente:
    eris.main` direto antes do watchdog existir) - `pythonw.exe`, não
    `python.exe`, sem console; a saída do PRÓPRIO watchdog (não do ERIS, que
    já se loga sozinho, ver `_RedirecionadorLog`) vai pra
-   `logs/watchdog_completo.log`/`logs/watchdog_musica.log`. O `.vbs` esconde
+   `logs/watchdog_principal.log`/`logs/watchdog_musica.log`. O `.vbs` esconde
    o console do PRÓPRIO `.bat` (mesmo padrão do `iniciar_galateia_oculto.vbs`
    da GAIA). `encerrar_eris.ps1` mata por `CommandLine` (agora também casa
    `eris\.watchdog`, além de `Project-ERIS`/`eris\.main`).
-3. **`eris/tray.py`** - **só o papel "completo" sobe um ícone de bandeja de
+3. **`eris/tray.py`** - **só o papel "principal" sobe um ícone de bandeja de
    verdade** (ícone oficial do ERIS, Maçã Dourada da Discórdia,
    `assets/icone_eris.png`); o "musica" sobe sem UI nenhuma, só um listener
    de controle remoto (`PORTA_CONTROLE_MUSICA=8780`, TCP local, comando de
-   texto simples `FECHAR`/`REINICIAR` numa linha) que o menu do "completo"
+   texto simples `FECHAR`/`REINICIAR` numa linha) que o menu do "principal"
    usa - "Reiniciar música"/"Fechar música" conectam nessa porta e mandam o
    comando; "Música: rodando/parada" no menu sonda
    `PORTA_INSTANCIA_UNICA_MUSICA` (mesmo truque de bind-falha-significa-
    ocupado já usado pra travar instância única, e pelo
-   `voz_local_supervisor.py` da GAIA). "Ver logs" do "completo" já cobre as
+   `voz_local_supervisor.py` da GAIA). "Ver logs" do "principal" já cobre as
    2 instâncias - `_RedirecionadorLog` (`eris/main.py`) escreve ambas no
    MESMO `logs/AAAA-MM-DD.log`, não precisa de item separado.
 
-**Fechar/Reiniciar (local no "completo" OU remoto vindo de um comando pro
+**Fechar/Reiniciar (local no "principal" OU remoto vindo de um comando pro
 "musica") precisam encerrar o bot de verdade, não só a UI**: `eris/tray.py`
 reaproveita o MESMO padrão já usado por `eris/api_bridge.py` pra falar com o
 loop do bot de fora dele - `bot.loop_atual()`/`bot.cliente_conectado()` +
@@ -1712,9 +1711,9 @@ independe dessas libs, continua funcionando).
 ## Diagnóstico de saída silenciosa + horário nos logs (2026-09-02)
 
 Achado real: os 2 `eris.watchdog` morreram de vez num dia (nenhum dos 2
-supervisores vivo, "completo" fora do ar, "música" tocando órfão sem rede
+supervisores vivo, "principal" fora do ar, "música" tocando órfão sem rede
 de segurança) - restaurado via `encerrar_eris.ps1` + `iniciar_eris.bat`.
-Investigando o motivo de "completo" ter caído 4x sozinho antes disso
+Investigando o motivo de "principal" ter caído 4x sozinho antes disso
 (sempre código 15, que não é nenhum dos 2 códigos intencionais do projeto,
 42/43) - sem NENHUM rastro: nem traceback em `logs/AAAA-MM-DD.log`, nem
 crash reportado no Event Viewer do Windows. Isso descarta uma exceção
@@ -1792,6 +1791,114 @@ Corrigido:
   "nada faltando" depois. Nunca testado no boot real do Discord ainda -
   próximo restart de produção é a validação final.
 
+## Modo Música retoma sozinha após reinício (2026-09-04)
+
+Pedido do usuário depois de perceber o problema durante um deploy do
+PANDORA: "qnd vc reinicia, a eris para de tocar musica, e n volta mais.
+Se n tiver como separar p reiniciar so parte do pandora, tem como pelo
+menos fazer ela voltar a tocar musica q estava tocando qnd voltar?".
+Investigação achou os DOIS: dava pra separar (ver "Restart separado do
+papel 'principal'" abaixo) E dava pra fazer resumir sozinha - as duas
+coisas foram feitas.
+
+**Antes**: `_carregar_fila_logica_persistida`/`_salvar_fila_logica_
+persistida` (`fila_sessao_<guild>.json`) já persistiam a fila de
+IDENTIDADES (camada 2, `fila_logica`) desde 2026-08-26 - "sobrevive a um
+restart enquanto a call continua ativa" - mas só isso: nada persistia
+QUAL canal de voz estava tocando, quem iniciou, nem a faixa que estava
+tocando NA HORA da queda. Um restart perdia a conexão de voz de vez;
+`SessaoMusica` só era recriada quando um comando manual (`/musica tocar`
+etc.) chamava `_obter_ou_criar_sessao` de novo - nada automático.
+
+**Depois**: o arquivo virou `sessao_musica_<guild>.json` com o estado
+COMPLETO - `canal_id`, `text_channel_id`, `iniciado_por`, `modo_continuo`,
+`modo_aprovadas`, `tocando_agora` E `fila_logica` (`_salvar_estado_
+sessao(sessao)`, novo, substitui a função antiga em todo call site).
+Salvo não só quando a fila muda, mas também no FIM de `SessaoMusica.
+_tocar()` - é o ponto que faltava pra `tocando_agora` nunca ficar
+desatualizado em disco.
+
+`eris.core.musica.retomar_sessoes_persistidas(client)` (novo) - chamada
+1x no `on_ready` do papel "musica" (`eris/bot.py`, guardada por
+`_musica_retomada` pra nunca repetir numa reconexão do discord.py). Varre
+`data/sessao_musica_*.json` (1 arquivo por servidor) e, pra cada um:
+1. Resolve o `guild`/canal de voz via `client.get_guild`/`get_channel` -
+   se qualquer um sumiu, limpa o arquivo e segue pro próximo.
+2. Só resume se o canal ainda tem alguém DE VERDADE nele (`any(not m.bot
+   for m in canal.members)`, mesmo critério de sempre usado em `on_voice_
+   state_update` pra nunca ficar tocando sozinha numa call vazia) - senão
+   também limpa o arquivo (a sessão morreu de vez, não faz sentido
+   guardar pra sempre esperando alguém entrar).
+3. Reconstrói uma `SessaoMusica` nova, restaura `modo_continuo`/
+   `_modo_aprovadas`/`fila_logica`, reconecta (`entrar()`) no canal.
+4. A faixa que estava tocando (`tocando_agora`) entra no TOPO da fila de
+   streams (`fila`, camada 3) e `_avancar()` é chamado manualmente (o
+   equivalente de "a faixa anterior acabou, toca a próxima") - ela toca
+   de novo desde o INÍCIO, não do segundo exato de antes (exigiria seek
+   de verdade no ffmpeg, fora de escopo aqui). Se o link do YouTube já
+   expirou nesse meio tempo, o tratamento de `_stream_expirado` que já
+   existia em `_avancar` resolve de novo sozinho, sem código novo pra
+   isso.
+
+**Validado** com mocks de Discord (`Client`/`Guild`/`VoiceChannel`
+falsos, sem precisar de uma call real): save/load/remove do estado batem
+certo; canal com alguém de verdade reconecta e chama `play()` na faixa
+persistida; canal só com bots (ninguém de verdade) não resume e limpa o
+arquivo sozinho.
+
+## Restart separado do papel "principal" - sem derrubar a música (2026-09-04)
+
+Mesmo pedido do usuário acima ("Se n tiver como separar p reiniciar so
+parte do pandora..."). PANDORA/Colecionador (`_registrar_slash_colecao`,
+`colecao_db.inicializar()`) só carrega no papel "principal"
+(`eris/bot.py::iniciar_bot`) - o papel "musica" nunca importa/usa esse
+código, só registra `/musica`/`/caos`. Ou seja: **um deploy que só muda
+código do PANDORA nunca precisava derrubar o papel "musica"** - a música
+tocando numa call nunca precisava parar por causa disso. O que faltava
+era só a FERRAMENTA pra fazer isso de forma direcionada (até aqui,
+`encerrar_eris.ps1`/`iniciar_eris.bat` sempre miravam os 2 papéis juntos).
+
+- `encerrar_eris.ps1` ganhou `-Papel principal|musica|todos` (default
+  `todos`, comportamento de sempre) - filtra a lista de processos-alvo
+  por `CommandLine` (mesmo padrão de sempre: nunca mata processo por nome
+  cru, só por conter `Project-ERIS`/`eris.main`/`eris.watchdog` E,
+  quando um papel específico é pedido, também `musica` presente/ausente).
+- `iniciar_eris.bat` ganhou um argumento posicional opcional
+  (`principal`/`musica`) - sem argumento sobe os 2 watchdogs de sempre;
+  com um papel específico, sobe só aquele.
+- Nomenclatura "completo" -> "principal" no mesmo dia (ver seção própria
+  abaixo) - **não é a mesma mudança**, só coincidiu na mesma sessão.
+
+## Papel "completo" -> "principal" (2026-09-04)
+
+Pedido do usuário refletindo sobre a nomenclatura: "Faz sentido esse nome
+'Completo'?" - discutido que o nome nunca quis dizer "faz literalmente
+tudo", só "tudo MENOS o que foi separado pro Modo Música" (moderação,
+PANDORA/Colecionador, voz de Conversa/Intérprete/Tutora, texto livre) -
+nome que sobrou de quando só existia 1 bot fazendo tudo, antes do Modo
+Música ser extraído (2026-08-26). Resposta: "Pode renomear para
+Principal".
+
+Renomeado em `eris/main.py` (`PAPEL`), `eris/bot.py` (`iniciar_bot`,
+variável local `principal`), `eris/watchdog.py` (`_papel_do_argv`),
+`eris/tray.py` (ícone/menu/thread), `eris/config.py` (comentários) - e,
+cross-repo, `Project-PANDORA/pandora/auto_colecionador.py`
+(`HORARIOS_POR_PAPEL`, a chave PRECISA bater com o `papel` que `eris/
+bot.py` passa pro `AutoColecionador`). Arquivo de log do watchdog também
+migrou (`watchdog_completo.log` -> `watchdog_principal.log` - o antigo
+fica no lugar como histórico morto, só para de ser escrito).
+`README.md`/`TODO.md` atualizados nas menções ao PAPEL (as ocorrências de
+"completo" como adjetivo comum - "histórico completo", "detalhe
+completo" etc. - ficaram como estavam, não são o nome do papel).
+`CHANGELOG.md` NÃO foi reescrito - entradas antigas continuam citando
+"completo", que era o nome válido na época de cada entrada.
+
+**Validado**: boot real dos 2 papéis mostra `Bot conectado como GAIA#9308
+(papel "principal")` no log; `HORARIOS_POR_PAPEL.get("principal")`
+resolve certo (o auto-colecionador da conta de bot GAIA depende disso
+pra saber o horário de roll/claim - uma chave desalinhada deixaria
+`self.horarios` como `None` e o loop nunca dispararia, silenciosamente).
+
 ## Pendências
 
 - **Slash commands de ação via webhook** (`/abrir`, `/jornalista`, etc.) -
@@ -1801,7 +1908,7 @@ Corrigido:
   extração". Voz por call (Conversa/Intérprete/Tutora) JÁ foi validada com
   sucesso em 2026-08-25 (ver TODO.md, bloqueio DAVE resolvido) - Modo
   Música ainda não (playback numa call real, ver TODO.md).
-- **Colecionador de Personagens** - EXTRAÍDO pro [Project PANDORA](../Project-PANDORA)
+- **Colecionador de Personagens** - EXTRAÍDO pro [Project PANDORA](../../Project-PANDORA)
   (2026-08-29, ver seção acima) - pendências de validação do cutover em si
   (testar cada fluxo ao vivo depois da mudança de repositório) ficam
   registradas no `TODO.md` do PANDORA, não mais aqui.

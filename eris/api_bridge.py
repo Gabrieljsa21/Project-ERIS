@@ -5,7 +5,7 @@ Consumida pela GAIA (`integrations/eris_client.py`) - entrega de mensagem
 proativa (Agendador Diário, monitoramentos), CRUD de donos/config de
 roteamento (Painel -> Discord Setup) e exportação de canal. Moderação NÃO
 tem rota aqui de propósito - é acionada só pelos slash commands do próprio
-ERIS (`eris/bot.py`), nunca pela GAIA (ver ARQUITETURA.md).
+ERIS (`eris/bot.py`), nunca pela GAIA (ver docs/ARQUITETURA.md).
 
 Roda numa THREAD separada (não o loop asyncio do bot) - qualquer coroutine
 precisa ser despachada via `asyncio.run_coroutine_threadsafe` contra o loop
