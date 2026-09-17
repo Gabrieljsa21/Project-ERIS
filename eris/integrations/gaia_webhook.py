@@ -242,6 +242,34 @@ def pedir_voto_musica(discord_user_id, artista, titulo):
 # real, na 1ª reivindicação de cada personagem, nunca em lote)
 # --------------------------------------------------------------------------
 
+def obter_comandos_gaia():
+    """Metadados (nome/descrição/argumento) dos comandos de ação que a GAIA
+    expõe (`core/agent/comandos.py`) - chamado 1x no boot do bot (ver
+    `eris/bot.py::iniciar_bot`) pra registrar o slash command nativo
+    correspondente. Devolve listas vazias (sem slash command nenhum desses
+    nessa sessão) se a GAIA estiver fora do ar - reiniciar o ERIS depois
+    dela subir resolve, mesmo raciocínio de qualquer outro satélite que
+    depende da GAIA estar de pé."""
+    resultado = _get("/eris/comandos")
+    if not resultado:
+        return {"sincronos": [], "assincronos": []}
+    return {"sincronos": resultado.get("sincronos", []), "assincronos": resultado.get("assincronos", [])}
+
+
+def pedir_resposta_comando(comando, argumento, eh_dono, remetente_id):
+    """Encaminha a execução de um slash command de ação (`/abrir`,
+    `/jornalista` etc.) pro handler de verdade em `core/agent/comandos.py` -
+    simétrico a `pedir_resposta_persona`, só que pra um comando nativo
+    registrado a partir de `obter_comandos_gaia()` em vez de mensagem livre.
+    Devolve o texto de resposta, ou None se a GAIA não respondeu."""
+    resultado = _post("/eris/comando", {
+        "comando": comando, "argumento": argumento or "", "eh_dono": bool(eh_dono), "remetente_id": str(remetente_id),
+    })
+    if resultado is None:
+        return None
+    return resultado.get("resposta")
+
+
 def pedir_ideia_lista_desejo():
     """`/ideia` (2026-08-29, pedido do usuário: "tem como forcar isso com
     /ideia?") - gera uma ideia de animação/reação nova da Lista de Desejo

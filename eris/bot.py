@@ -776,6 +776,66 @@ def _registrar_slash_lista_desejo(tree):
     tree.add_command(_ideia)
 
 
+def _registrar_slash_comandos_gaia(tree, metadados):
+    """Slash commands de ação que a GAIA expõe via `core/agent/comandos.py`
+    (2026-09-17, completa a extração do Discord - ver docs/ARQUITETURA.md e
+    docs/TODO.md). Proxy fino: `metadados` (nome/descrição/argumento de cada
+    comando) vem de `GET /eris/comandos`, buscado 1x no boot do bot
+    (`iniciar_bot` abaixo) - registra o slash NATIVO aqui e encaminha
+    (comando, argumento, eh_dono, remetente_id) pro webhook reverso na hora
+    de executar; quem decide o que fazer e o texto de resposta é sempre a
+    GAIA, o ERIS nunca roda o handler de verdade.
+
+    Parâmetro sempre chamado "argumento" (mesmo raciocínio da versão que
+    rodava dentro da própria GAIA antes da extração, ver histórico de
+    `discord_bot.py`): evita gerar 1 assinatura de função Python por
+    comando, a descrição do parâmetro (visível ao passar o mouse no
+    Discord) usa o nome mais específico de cada um
+    (`info["argumento"]`).
+
+    Sem sincronização automática de comando novo - só pega a lista atual no
+    boot; um comando adicionado do lado da GAIA só aparece aqui depois de
+    reiniciar o ERIS (mesmo padrão de qualquer satélite que depende de
+    metadados buscados 1x da GAIA)."""
+
+    async def _executar(interaction, comando, argumento):
+        if not await _somente_dono(interaction):
+            return
+        await interaction.response.defer()
+        try:
+            resposta = await asyncio.to_thread(
+                gaia_webhook.pedir_resposta_comando, comando, argumento, True, interaction.user.id,
+            )
+        except Exception as e:
+            print(f" [ERIS] Erro pedindo \"/{comando}\" pra GAIA: {e}")
+            resposta = None
+        if resposta is None:
+            await interaction.followup.send("A Galateia está desligada agora (ou não respondeu) - tenta de novo depois.")
+            return
+        for bloco in mensagens.fatiar_mensagem(resposta):
+            await interaction.followup.send(bloco)
+
+    def _com_argumento(nome, descricao_argumento):
+        async def _callback(interaction: discord.Interaction, argumento: str):
+            await _executar(interaction, nome, argumento)
+        _callback.__name__ = f"slash_{nome}"
+        app_commands.describe(argumento=descricao_argumento.capitalize())(_callback)
+        return _callback
+
+    def _sem_argumento(nome):
+        async def _callback(interaction: discord.Interaction):
+            await _executar(interaction, nome, "")
+        _callback.__name__ = f"slash_{nome}"
+        return _callback
+
+    for info in list(metadados.get("sincronos", [])) + list(metadados.get("assincronos", [])):
+        nome = info.get("nome")
+        if not nome:
+            continue
+        callback = _com_argumento(nome, info["argumento"]) if info.get("argumento") else _sem_argumento(nome)
+        tree.add_command(app_commands.Command(name=nome, description=info.get("descricao") or nome, callback=callback))
+
+
 def _voice_channel_do_autor(interaction):
     """`interaction.user.voice` só existe de verdade quando o autor é um
     `discord.Member` (dentro de um servidor) E está numa call agora."""
@@ -1762,6 +1822,11 @@ async def iniciar_bot(token, papel="principal"):
         _registrar_slash_voz(tree)
         _registrar_slash_colecao(tree)
         _registrar_slash_lista_desejo(tree)
+        # 🔥 Busca síncrona de boot (2026-09-17) - se a GAIA estiver fora do
+        # ar agora, sobe sem esses slash commands nessa sessão (reiniciar o
+        # ERIS depois dela subir resolve, ver gaia_webhook.obter_comandos_gaia).
+        metadados_comandos_gaia = await asyncio.to_thread(gaia_webhook.obter_comandos_gaia)
+        _registrar_slash_comandos_gaia(tree, metadados_comandos_gaia)
     else:
         # 🔥 Exclusivo do papel "musica" (2026-08-26, achado pelo usuário: "pq
         # a gaia e a eris tem /caos? N deveria ser apenas da eris?") - antes
