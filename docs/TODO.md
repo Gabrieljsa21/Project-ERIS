@@ -144,28 +144,6 @@ alternativos:**
    voz numa call ficam bloqueados (a Gala pode ENTRAR e FALAR na call
    normalmente, só não consegue OUVIR ninguém).
 
-### Slash commands de ação que dependem da GAIA
-
-**Prioridade:** Média | **Complexidade:** Média
-
-`/abrir`, `/jornalista` e o resto de `core/agent/comandos.py` (GAIA) não
-foram migrados - desenho já fechado (ver `ARQUITETURA.md`): o ERIS registra
-o slash command (usando metadados que a GAIA expõe - nome/descrição/
-argumento) e encaminha `(comando, argumento, eh_dono, remetente_id)` pro
-webhook reverso; a GAIA roda o handler de sempre e devolve o texto. Falta
-implementar o lado da GAIA que expõe essa lista + o endpoint novo no
-webhook reverso (`/eris/comando`, simétrico ao `/eris/mensagem` já
-existente).
-
-### `/caos` - validado numa call real (RESOLVIDO em 2026-08-26)
-
-Implementado e confirmado funcionando de ponta a ponta: log de produção
-mostra "Sessão de música conectada" seguido de faixas tocando em
-sequência automática (`Let Down (Remastered) - Radiohead` -> `No
-Surprises - Radiohead`), sem intervenção manual entre uma e outra -
-confirma tanto a semente inicial (`/radar/semente`) quanto a continuação
-automática (`/radar/proxima`) funcionando juntas numa call real.
-
 ## Roadmap futuro (registrado, sem decisão de design específica ainda)
 
 Levantado pelo usuário ao planejar o ERIS (2026-08-24), citando AmariBot

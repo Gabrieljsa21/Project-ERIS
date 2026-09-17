@@ -20,7 +20,7 @@ o fraseio continua sendo persona, e fica com a GAIA.
 | Donos (quem tem acesso total) | ✅ `eris.db` (SQLite) | Painel edita via HTTP |
 | Filtro "vale chamar a persona?" | ✅ (`eris.core.seguranca`) | Painel edita via HTTP |
 | Conteúdo da resposta | webhook reverso pede | ✅ decide sempre |
-| Slash commands de ação (`/abrir` etc.) | **fora do escopo desta v1** | ver "Pendências" abaixo |
+| Slash commands de ação (`/abrir` etc.) | ✅ registra o nativo, encaminha execução | ✅ roda o handler, decide o texto |
 | Moderação/administração | ✅ 100% local, zero IA | - |
 | Exportação de canal | ✅ | - |
 | Voz (Conversa/Intérprete/Tutora) | ✅ conexão/captura/playback (`eris.core.voz_call`) | ✅ transcrição/tradução/resposta/síntese via webhook |
@@ -43,12 +43,26 @@ cada um foi decidido explicitamente antes de escrever código (conversa de
    `brain.json` pra `eris.db` (tabela `donos`). O ERIS calcula `eh_dono` e
    manda como metadado no webhook reverso - a GAIA não recalcula.
 3. **Slash commands que executam ação real** (`/abrir`, `/jornalista` etc.)
-   - **decisão: fora do escopo desta extração**. O desenho correto (ERIS
-   registra o comando, encaminha pro webhook reverso, GAIA roda o handler
-   de `core/agent/comandos.py` e devolve o texto) está fechado, mas exige
-   expor `INFO_COMANDOS`/`INFO_COMANDOS_ASSINCRONOS` pra cá e um contrato de
-   webhook próprio - não é mecânico o bastante pra entrar na mesma extração
-   que o resto sem risco de regressão. Ver TODO.md.
+   - **implementado em 2026-09-17** (`eris/bot.py::_registrar_slash_comandos_gaia`,
+   `eris/integrations/gaia_webhook.py::obter_comandos_gaia`/
+   `pedir_resposta_comando`): no boot do bot (papel "principal" só),
+   `GET /eris/comandos` busca nome/descrição/argumento de cada comando
+   direto de `core/agent/comandos.py::obter_metadados_comandos` (GAIA) -
+   fonte única, a lista nunca é duplicada aqui. Cada comando vira um slash
+   nativo com parâmetro sempre chamado "argumento" (mesmo raciocínio da
+   versão que rodava dentro da própria GAIA antes da extração - evita gerar
+   1 assinatura de função por comando). Ao executar, checa dono localmente
+   (`_somente_dono`, denial ephemeral, sem round-trip à toa pra visitante) e
+   encaminha `(comando, argumento, eh_dono=True, remetente_id)` pro
+   `POST /eris/comando` (webhook reverso, simétrico ao `/eris/mensagem`
+   já existente) - a GAIA roda o handler de sempre
+   (`comandos.processar_comando`, mesma função usada pelo prefixo "/" em
+   texto puro) e devolve o texto pronto; o ERIS nunca decide o que fazer,
+   só fatia a resposta (`mensagens.fatiar_mensagem`) se passar do limite do
+   Discord. Sem sincronização automática de comando novo - a lista só é
+   buscada 1x no boot, reiniciar o ERIS depois de um comando novo do lado
+   da GAIA é esperado (mesmo padrão de qualquer satélite dependente de
+   metadados buscados da GAIA).
 4. **Intérprete/Tutora por voz em call** - **implementado em 2026-08-25**,
    turno-a-turno (ERIS captura áudio até o silêncio → manda pra GAIA → GAIA
    transcreve/decide/sintetiza → devolve o CAMINHO local do áudio → ERIS
