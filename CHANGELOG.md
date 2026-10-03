@@ -238,6 +238,8 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
 
 ### Corrigido
 
+- **"A Galateia está desligada agora" durante pedido de imagem** (2026-10-02, caso real: "crie uma imagem de como eu te trato"). `pedir_resposta_persona` (`eris/integrations/gaia_webhook.py`) esperava 30s pela GAIA; um turno com imagem (LLM + geração com referência, 1-2min) passa disso, e o ERIS respondia que ela estava desligada com ela trabalhando. Agora usa `TIMEOUT_MENSAGEM_SEGUNDOS = 270`, acima dos 240s do lado da GAIA (`/eris/mensagem`), mesma regra do turno de voz.
+
 - **Segredos mascarados antes do console e do log em disco** (2026-09-07): `eris.seguranca_log` remove os valores configurados de `DISCORD_BOT_TOKEN` e chaves Groq, além de reconhecer tokens Discord/Groq pelo formato. O filtro foi colocado no redirecionador central de `stdout`/`stderr`, cobrindo `print()`, tracebacks e logs de bibliotecas sem alterar cada call site. Validado com segredo de ambiente e token sintético.
 - **Claim por emoji e feedback musical confirmados em produção** (2026-09-07): o usuário validou no Discord que somente o bot principal responde ao emoji de claim. Também confirmou os botões 👍/👎 depois do reinício da GAIA, com a rota `/eris/musica_feedback` carregada. As duas pendências de validação foram removidas de `docs/TODO.md`.
 - **Dependência do juiz da GAIA voltou a apontar para um modelo Groq ativo** (2026-09-07): a correção foi feita no repositório da GAIA, trocando `llama-3.1-8b-instant` por `openai/gpt-oss-20b` e migrando a camada já salva no `brain.json`. O lembrete duplicado do ERIS foi removido do TODO.
