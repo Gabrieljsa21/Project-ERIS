@@ -31,6 +31,12 @@ TIMEOUT_SEGUNDOS = 30  # generoso de propósito - a GAIA pode estar processando 
 # ao tentar escrever a resposta no socket já fechado jogava tudo fora,
 # silenciosamente (usuário via "às vezes dá erro e ela não responde").
 TIMEOUT_TURNO_VOZ_SEGUNDOS = 120
+# 🔥 Mensagem de texto (2026-10-02, caso real): um turno com imagem (`<IMAGEM_NOS:>`,
+# LLM + geração com referência 1-2min + resposta final) passava dos 30s - o ERIS
+# desistia e respondia "A Galateia está desligada agora" com ela ligada e
+# ainda trabalhando. Mesma regra do turno de voz: maior que o lado da GAIA
+# (`integrations/iris_bridge.py`, `/eris/mensagem`, timeout=240).
+TIMEOUT_MENSAGEM_SEGUNDOS = 270
 
 
 def _post(caminho, corpo, timeout=TIMEOUT_SEGUNDOS):
@@ -63,7 +69,7 @@ def pedir_resposta_persona(texto, eh_dono, remetente_id, remetente_nome, channel
     resultado = _post("/eris/mensagem", {
         "texto": texto, "eh_dono": eh_dono, "remetente_id": str(remetente_id),
         "remetente_nome": remetente_nome, "channel_id": str(channel_id),
-    })
+    }, timeout=TIMEOUT_MENSAGEM_SEGUNDOS)
     if resultado is None:
         return None
     return resultado.get("resposta")
