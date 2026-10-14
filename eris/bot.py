@@ -566,32 +566,92 @@ class _ViewAdminPandora(discord.ui.View):
         if await self._autor(interaction):
             await interaction.response.send_modal(_ModalPersonagemAdminPandora(self.guild_id))
 
-    async def _processar_classes(self, interaction, apenas_falhas=False, catalogo=False):
-        await interaction.response.defer(ephemeral=True)
-        if catalogo:
-            pendentes = await asyncio.to_thread(colecao_db.personagens_nao_adquiridos_sem_classe, 100)
-        else:
-            pendentes = await asyncio.to_thread(colecao_db.personagens_possuidos_sem_classe, 100, apenas_falhas)
+    async def _abrir_validacao(self, interaction, fila):
+        total = await asyncio.to_thread(_contar_fila_classes, fila)
+        if not total:
+            await interaction.response.send_message("Nada pendente nessa fila.", ephemeral=True)
+            return
+        await interaction.response.send_modal(_ModalValidarClassesPandora(fila, total))
+
+    @discord.ui.button(label="Validar sem classe", emoji="🔎", style=discord.ButtonStyle.secondary, row=3)
+    async def validar_normais(self, interaction, _button):
+        if await self._autor(interaction): await self._abrir_validacao(interaction, "possuidas")
+
+    @discord.ui.button(label="Revalidar falhas", emoji="⚠️", style=discord.ButtonStyle.secondary, row=3)
+    async def validar_falhas(self, interaction, _button):
+        if await self._autor(interaction): await self._abrir_validacao(interaction, "falhas")
+
+    @discord.ui.button(label="Validar não adquiridas", emoji="📚", style=discord.ButtonStyle.secondary, row=3)
+    async def validar_catalogo(self, interaction, _button):
+        if await self._autor(interaction): await self._abrir_validacao(interaction, "catalogo")
+
+
+# Filas de classificação do painel admin (2026-10-14, pedido do usuário:
+# "deixa a pessoa informar a quantidade, e tem de informar quantas tem").
+# "falhas" junta as falhas das possuídas e as do catálogo não adquirido.
+_TITULOS_FILA_CLASSES = {"possuidas": "Validar sem classe", "falhas": "Revalidar falhas", "catalogo": "Validar não adquiridas"}
+_MAX_VALIDACAO_CLASSES = 2000
+
+
+def _contar_fila_classes(fila):
+    if fila == "catalogo":
+        return colecao_db.contar_personagens_nao_adquiridos_sem_classe()
+    if fila == "falhas":
+        return colecao_db.contar_personagens_possuidos_sem_classe(True) + colecao_db.contar_personagens_nao_adquiridos_sem_classe(True)
+    return colecao_db.contar_personagens_possuidos_sem_classe(False)
+
+
+def _buscar_fila_classes(fila, limite):
+    if fila == "catalogo":
+        return colecao_db.personagens_nao_adquiridos_sem_classe(limite)
+    if fila == "falhas":
+        possuidas = colecao_db.personagens_possuidos_sem_classe(limite, True)
+        return possuidas + colecao_db.personagens_nao_adquiridos_sem_classe(limite - len(possuidas), True) if len(possuidas) < limite else possuidas
+    return colecao_db.personagens_possuidos_sem_classe(limite, False)
+
+
+class _ModalValidarClassesPandora(discord.ui.Modal):
+    def __init__(self, fila, total):
+        super().__init__(title=_TITULOS_FILA_CLASSES[fila])
+        self.fila = fila
+        self.total = total
+        maximo = min(total, _MAX_VALIDACAO_CLASSES)
+        self.quantidade = discord.ui.TextInput(
+            label=f"Quantidade (na fila: {colecao_db.fmt_numero(total)})"[:45],
+            placeholder=f"1 a {maximo}",
+            default=str(min(100, maximo)),
+            max_length=5,
+        )
+        self.add_item(self.quantidade)
+
+    async def on_submit(self, interaction):
+        maximo = min(self.total, _MAX_VALIDACAO_CLASSES)
+        try:
+            quantidade = int(self.quantidade.value.strip())
+            if not 1 <= quantidade <= maximo:
+                raise ValueError
+        except ValueError:
+            await interaction.response.send_message(f"Informe um número de 1 a {maximo}.", ephemeral=True)
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        pendentes = await asyncio.to_thread(_buscar_fila_classes, self.fila, quantidade)
         sucesso = falhas = 0
         for personagem in pendentes:
             if (await gacha.revelar_classe(personagem))[0]: sucesso += 1
             else:
                 falhas += 1
                 await asyncio.to_thread(colecao_db.marcar_falha_classificacao, personagem["id"])
-        restantes = await asyncio.to_thread(colecao_db.contar_personagens_possuidos_sem_classe, apenas_falhas) if not catalogo else "?"
-        await interaction.followup.send(f"{len(pendentes)} verificadas: {sucesso} classificadas, {falhas} falharam. Restam {restantes} na fila.", ephemeral=True)
-
-    @discord.ui.button(label="Validar sem classe", emoji="🔎", style=discord.ButtonStyle.secondary, row=3)
-    async def validar_normais(self, interaction, _button):
-        if await self._autor(interaction): await self._processar_classes(interaction)
-
-    @discord.ui.button(label="Revalidar falhas", emoji="⚠️", style=discord.ButtonStyle.secondary, row=3)
-    async def validar_falhas(self, interaction, _button):
-        if await self._autor(interaction): await self._processar_classes(interaction, apenas_falhas=True)
-
-    @discord.ui.button(label="Validar não adquiridas", emoji="📚", style=discord.ButtonStyle.secondary, row=3)
-    async def validar_catalogo(self, interaction, _button):
-        if await self._autor(interaction): await self._processar_classes(interaction, catalogo=True)
+        restantes = await asyncio.to_thread(_contar_fila_classes, self.fila)
+        texto = (
+            f"{_TITULOS_FILA_CLASSES[self.fila]}: {colecao_db.fmt_numero(len(pendentes))} verificadas, "
+            f"{colecao_db.fmt_numero(sucesso)} classificadas, {colecao_db.fmt_numero(falhas)} falharam. "
+            f"Restam {colecao_db.fmt_numero(restantes)} na fila."
+        )
+        try:
+            await interaction.followup.send(texto, ephemeral=True)
+        except discord.HTTPException:
+            # O token da interação vale 15 min; rodadas grandes passam disso.
+            await interaction.user.send(texto)
 
 
 def _registrar_slash_moderacao(tree):

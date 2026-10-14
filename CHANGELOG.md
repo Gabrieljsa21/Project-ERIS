@@ -7,6 +7,10 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
 
 ## [Unreleased]
 
+### Alterado (2026-10-14, validação de classes no painel admin)
+
+- **Validação de classes pede a quantidade e informa o tamanho da fila** (2026-10-14): **"ve se da para aumentar esse limite que hj é 100, deixa a pessoa informar a quantidade, e tem de informar quantas tem"** - "Validar sem classe", "Revalidar falhas" e "Validar não adquiridas" abrem um formulário com o total na fila e a quantidade a processar (padrão 100, até 2.000). O resultado agora mostra quantas restam também no catálogo (antes aparecia "Restam ? na fila"). "Revalidar falhas" passou a incluir as falhas do catálogo não adquirido. Se a rodada passar dos 15 minutos da interação, o resultado chega por DM.
+
 ### Adicionado
 
 - **Slash commands de ação da GAIA (`/abrir`, `/jornalista` etc.) - completa a extração do Discord (2026-09-17)** - `eris/bot.py::_registrar_slash_comandos_gaia` busca nome/descrição/argumento de cada comando direto de `core/agent/comandos.py` (GAIA, `GET /eris/comandos`) no boot do bot e registra o slash nativo correspondente; ao executar, checa dono localmente (denial ephemeral, sem round-trip à toa pra visitante) e encaminha pro webhook reverso (`POST /eris/comando`) - a GAIA roda o handler de sempre e devolve o texto pronto, o ERIS só fatia a resposta se passar do limite do Discord. Ver `docs/ARQUITETURA.md`.

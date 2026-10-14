@@ -1913,6 +1913,11 @@ resolve certo (o auto-colecionador da conta de bot GAIA depende disso
 pra saber o horário de roll/claim - uma chave desalinhada deixaria
 `self.horarios` como `None` e o loop nunca dispararia, silenciosamente).
 
+## Validação de classes com quantidade informada (2026-10-14)
+
+- Os três botões de classe do painel admin do PANDORA (`_ViewAdminPandora`, linha 3) abrem `_ModalValidarClassesPandora`, que mostra o total da fila (`_contar_fila_classes`) e pede a quantidade (1 a `min(total, 2000)`). Filas: `possuidas`, `falhas` (possuídas e catálogo não adquirido, nessa ordem) e `catalogo`.
+- Cada personagem é uma chamada à GAIA; rodadas grandes podem passar dos 15 minutos do token da interação. Nesse caso o `followup` falha e o resultado vai por DM ao administrador.
+
 ## Pendências
 
 - **Slash commands de ação via webhook** (`/abrir`, `/jornalista`, etc.) -
