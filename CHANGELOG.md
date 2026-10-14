@@ -7,6 +7,8 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-14
+
 ### Alterado (2026-10-14, validação de classes no painel admin)
 
 - **Validação de classes pede a quantidade e informa o tamanho da fila** (2026-10-14): **"ve se da para aumentar esse limite que hj é 100, deixa a pessoa informar a quantidade, e tem de informar quantas tem"** - "Validar sem classe", "Revalidar falhas" e "Validar não adquiridas" abrem um formulário com o total na fila e a quantidade a processar (padrão 100, até 2.000). O resultado agora mostra quantas restam também no catálogo (antes aparecia "Restam ? na fila"). "Revalidar falhas" passou a incluir as falhas do catálogo não adquirido. Se a rodada passar dos 15 minutos da interação, o resultado chega por DM.
