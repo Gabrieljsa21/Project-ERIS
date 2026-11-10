@@ -1748,20 +1748,16 @@ def _registrar_slash_colecao(tree):
         ok, mensagem = colecao_db.comprar_upgrade_claims_ate(interaction.guild.id, interaction.user.id, proximo_nivel)
         await interaction.response.send_message(mensagem, ephemeral=not ok)
 
-    @app_commands.command(name="merge", description="Sacrifica 5 personagens da mesma raridade por 1 aleatória da raridade seguinte")
-    async def _merge(interaction: discord.Interaction, id1: int, id2: int, id3: int, id4: int, id5: int, confirmar: bool = False):
+    @app_commands.command(name="merge", description="Abre a Fusão: sacrifica 5 personagens da mesma raridade por 1 à sua escolha")
+    async def _merge(interaction: discord.Interaction):
         if interaction.guild is None:
             await interaction.response.send_message("Isso só funciona dentro de um servidor.", ephemeral=True)
             return
-        # 🔥 Regras de verdade vivem em `economia.executar_merge` (2026-08-29)
-        # - compartilhado com o botão 🔀 Merge do painel `/pandora`, pra
-        # nunca duplicar essa validação em 2 lugares.
-        ok, mensagem, precisa_confirmar = economia.executar_merge(
-            interaction.guild.id, interaction.user.id, [id1, id2, id3, id4, id5], confirmar,
-        )
-        if precisa_confirmar:
-            mensagem += " Use `confirmar:true` se realmente quer sacrificá-la(s)."
-        await interaction.response.send_message(mensagem, ephemeral=not ok)
+        # Mesmo painel do botão "🧬 Fusão" do `/pandora` (escolher as 5,
+        # depois o alvo). A versão antiga, por #id, chamava
+        # `economia.executar_merge` com a assinatura de antes de 2026-09-02
+        # e quebrava com TypeError.
+        await paineis.abrir_fusao(interaction)
 
     grupo_trocar = app_commands.Group(name="trocar", description="Propõe uma troca bilateral de personagens/WiShards com outro jogador")
 
