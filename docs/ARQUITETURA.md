@@ -1918,6 +1918,16 @@ pra saber o horário de roll/claim - uma chave desalinhada deixaria
 - Os três botões de classe do painel admin do PANDORA (`_ViewAdminPandora`, linha 3) abrem `_ModalValidarClassesPandora`, que mostra o total da fila (`_contar_fila_classes`) e pede a quantidade (1 a `min(total, 2000)`). Filas: `possuidas`, `falhas` (possuídas e catálogo não adquirido, nessa ordem) e `catalogo`.
 - Cada personagem é uma chamada à GAIA; rodadas grandes podem passar dos 15 minutos do token da interação. Nesse caso o `followup` falha e o resultado vai por DM ao administrador.
 
+## `/merge` abre o painel de Fusão (2026-11-10)
+
+O `/merge <id1..id5> [confirmar]` descrito mais acima deixou de existir
+nessa forma. A Fusão virou um fluxo de 2 etapas no PANDORA em 2026-09-02
+(escolher as 5, depois escolher o alvo) e o comando continuou chamando a
+assinatura antiga de `economia.executar_merge`, quebrando com `TypeError`.
+Agora o comando não tem parâmetros e só chama `paineis.abrir_fusao`
+(PANDORA 0.3.0), o mesmo caminho do botão "🧬 Fusão" do hub. O PANDORA
+0.3.0 também tem um teste que fixa as assinaturas que este bot importa.
+
 ## Pendências
 
 - **Slash commands de ação via webhook** (`/abrir`, `/jornalista`, etc.) -

@@ -7,6 +7,12 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-10
+
+### Corrigido (2026-11-10, `/merge`)
+
+- **`/merge` voltou a funcionar**: o comando chamava `economia.executar_merge` do PANDORA com a assinatura de antes de 2026-09-02 (4 argumentos, 3 valores de retorno) e quebrava com `TypeError` em todo uso. Agora não recebe parâmetros e abre o mesmo painel do botão "🧬 Fusão" do `/pandora` (`paineis.abrir_fusao`). Exige PANDORA 0.3.0 ou mais novo.
+
 ## [0.2.0] - 2026-10-14
 
 ### Alterado (2026-10-14, validação de classes no painel admin)
