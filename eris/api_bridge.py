@@ -13,8 +13,10 @@ do bot (`eris.bot.loop_atual()`), igual ao padrão já usado pela GAIA em
 `PainelQt.enviar_chat`."""
 import asyncio
 import base64
+import concurrent.futures
 import json
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import traceback
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from eris import bot, db
 from eris.config import PORTA_API_ERIS
@@ -64,10 +66,37 @@ class _API(BaseHTTPRequestHandler):
         self.send_response(404)
         self.end_headers()
 
+    def _executar_com_erro_tratado(self, rotas):
+        """🔥 2026-11-12 - antes, uma exceção num handler (ou o `timeout` de
+        `_rodar_no_loop_do_bot` estourando) fechava a conexão sem resposta
+        HTTP nenhuma, e a GAIA só via "conexão encerrada". Agora sempre sai um
+        JSON: 504 se o loop do bot não respondeu a tempo, 500 pro resto."""
+        try:
+            rotas()
+        except concurrent.futures.TimeoutError:
+            print(f" [ERIS] Ponte HTTP: {self.command} {self.path} passou de {TIMEOUT_CHAMADA_ASSINCRONA_SEGUNDOS}s no loop do bot.")
+            self._responder_erro(504, "O bot do ERIS não respondeu a tempo.")
+        except Exception as e:
+            print(f" [ERIS] Ponte HTTP: erro em {self.command} {self.path}: {e}")
+            traceback.print_exc()
+            self._responder_erro(500, str(e))
+
+    def _responder_erro(self, status, mensagem):
+        try:
+            self._responder_json({"ok": False, "erro": mensagem}, status=status)
+        except Exception:
+            pass  # a própria conexão já caiu, não há a quem responder
+
     # ----------------------------------------------------------------
     def do_GET(self):
+        self._executar_com_erro_tratado(self._rotas_get)
+
+    def do_POST(self):
+        self._executar_com_erro_tratado(self._rotas_post)
+
+    def _rotas_get(self):
         if self.path == "/status":
-            self._responder_json({"conectado": bot.cliente_conectado() is not None})
+            self._responder_json({"conectado": bot.esta_conectado()})
         elif self.path == "/donos":
             self._responder_json(db.listar_donos())
         elif self.path == "/config_roteamento":
@@ -88,7 +117,7 @@ class _API(BaseHTTPRequestHandler):
         else:
             self._responder_404()
 
-    def do_POST(self):
+    def _rotas_post(self):
         corpo = _ler_corpo_json(self)
 
         if self.path == "/donos":
@@ -159,5 +188,10 @@ def iniciar_servidor_api(token):
     `bot.iniciar_bot` (asyncio)."""
     global _token_global
     _token_global = token
-    servidor = HTTPServer((LOCAL_API_HOST, PORTA_API_ERIS), _API)
+    # 🔥 ThreadingHTTPServer (2026-11-12) - com o HTTPServer de antes, um
+    # `/exportar` de canal grande (minutos de paginação na API do Discord)
+    # travava todas as outras rotas, inclusive as notificações da GAIA. Mesmo
+    # problema e mesma correção do MOIRAI (2026-10-10).
+    servidor = ThreadingHTTPServer((LOCAL_API_HOST, PORTA_API_ERIS), _API)
+    servidor.daemon_threads = True
     servidor.serve_forever()

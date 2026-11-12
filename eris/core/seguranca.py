@@ -21,6 +21,22 @@ from eris.config import RATE_LIMIT_JANELA_SEGUNDOS, RATE_LIMIT_MAX_MENSAGENS
 
 _mensagens_por_remetente = {}
 _ultimo_aviso_limite = {}
+_proxima_poda = 0.0
+
+
+def _podar(agora):
+    """Remove quem não manda nada há mais de uma janela (2026-11-12): os dois
+    dicionários cresciam com cada remetente que o bot já viu, para sempre."""
+    global _proxima_poda
+    if agora < _proxima_poda:
+        return
+    _proxima_poda = agora + RATE_LIMIT_JANELA_SEGUNDOS
+    for remetente, fila in list(_mensagens_por_remetente.items()):
+        if not fila or agora - fila[-1] > RATE_LIMIT_JANELA_SEGUNDOS:
+            del _mensagens_por_remetente[remetente]
+    for remetente, momento in list(_ultimo_aviso_limite.items()):
+        if agora - momento > RATE_LIMIT_JANELA_SEGUNDOS:
+            del _ultimo_aviso_limite[remetente]
 
 
 def limite_excedido(remetente_id):
@@ -30,6 +46,7 @@ def limite_excedido(remetente_id):
     de chamar) - a intenção é limitar gente de fora, nunca travar o próprio
     controle remoto."""
     agora = time.monotonic()
+    _podar(agora)
     fila = _mensagens_por_remetente.setdefault(remetente_id, deque())
     fila.append(agora)
     while fila and agora - fila[0] > RATE_LIMIT_JANELA_SEGUNDOS:

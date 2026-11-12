@@ -62,6 +62,18 @@ _PADROES_CONFIG = {
 }
 
 
+# 🔥 Cache em memória (2026-11-12) - `eh_dono` e `deve_processar_mensagem`
+# rodam a cada mensagem de qualquer servidor e abriam até 3 conexões SQLite
+# cada vez. Toda escrita passa por este módulo (Painel da GAIA via
+# `api_bridge.py`, mesmo processo), então basta esvaziar o cache nas funções
+# de gravação abaixo.
+_cache = {}
+
+
+def _invalidar_cache():
+    _cache.clear()
+
+
 def _garantir_pasta():
     os.makedirs(PASTA_DADOS, exist_ok=True)
 
@@ -99,14 +111,17 @@ def listar_donos():
 
 
 def ids_donos_ativos():
-    with conexao() as conn:
-        linhas = conn.execute("SELECT id FROM donos WHERE ativo = 1").fetchall()
-        return {r["id"] for r in linhas}
+    if "donos_ativos" not in _cache:
+        with conexao() as conn:
+            linhas = conn.execute("SELECT id FROM donos WHERE ativo = 1").fetchall()
+        _cache["donos_ativos"] = frozenset(r["id"] for r in linhas)
+    return _cache["donos_ativos"]
 
 
 def salvar_donos(lista):
     """Substitui a lista inteira (mesmo contrato que `salvar_discord_donos`
     tinha na GAIA) - `lista`: [{"id", "nome", "ativo"}, ...]."""
+    _invalidar_cache()
     with conexao() as conn:
         conn.execute("DELETE FROM donos")
         conn.executemany(
@@ -132,6 +147,12 @@ def importar_donos_bootstrap(ids):
 # --------------------------------------------------------------------------
 
 def obter_config_roteamento():
+    if "roteamento" not in _cache:
+        _cache["roteamento"] = _ler_config_roteamento()
+    return dict(_cache["roteamento"], disabled_guilds=list(_cache["roteamento"]["disabled_guilds"]))
+
+
+def _ler_config_roteamento():
     with conexao() as conn:
         linhas = conn.execute("SELECT chave, valor FROM config_roteamento").fetchall()
         cfg = {r["chave"]: r["valor"] for r in linhas}
@@ -152,6 +173,7 @@ def salvar_config_roteamento(campo, valor):
     própria função (ver `definir_guild_desativado`) por ser uma lista, não um
     valor escalar."""
     valor_serializado = "1" if valor is True else "0" if valor is False else str(valor)
+    _invalidar_cache()
     with conexao() as conn:
         conn.execute(
             "INSERT INTO config_roteamento (chave, valor) VALUES (?, ?) "
@@ -167,6 +189,7 @@ def listar_guilds_desativados():
 
 
 def definir_guild_desativado(guild_id, desativado):
+    _invalidar_cache()
     with conexao() as conn:
         if desativado:
             conn.execute("INSERT OR IGNORE INTO guilds_desativados (guild_id) VALUES (?)", (str(guild_id),))

@@ -29,6 +29,11 @@ def testar_formato_discord_sem_variavel():
     assert limpo == seguranca_log.MASCARA
 
 
+def testar_formato_atual_de_token_mascarado_inteiro():
+    token = "M" * 26 + "." + "G" * 6 + "." + "h" * 38
+    assert seguranca_log.limpar_segredos(f"x {token} y") == f"x {seguranca_log.MASCARA} y"
+
+
 if __name__ == "__main__":
     testar_valor_configurado()
     testar_formato_discord_sem_variavel()

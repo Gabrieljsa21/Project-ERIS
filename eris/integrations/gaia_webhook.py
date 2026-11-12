@@ -19,31 +19,36 @@ import urllib.request
 
 from eris.config import URL_BASE_GAIA
 
-TIMEOUT_SEGUNDOS = 30  # generoso de propósito - a GAIA pode estar processando LLM/ferramenta
-# 🔥 Turno de voz (2026-08-25, Intérprete/Tutora/Conversa) - encadeia Whisper +
-# LLM (tradução ou persona) + TTS do lado da GAIA, bem mais lento que uma
-# mensagem de texto comum. 120s (não 60s) - achado real 2026-08-25: o lado da
-# GAIA (`integrations/iris_bridge.py`) espera até 90s pelo próprio turno
-# (`future.result(timeout=90)`); com o timeout DAQUI menor que o de LÁ, o ERIS
-# desistia (fechando a conexão) ANTES da GAIA terminar de responder sob carga
-# pesada (várias contas do Groq esgotadas em sequência, caindo pro fallback
-# NVIDIA) - a GAIA gerava a resposta certinho, mas o `ConnectionAbortedError`
-# ao tentar escrever a resposta no socket já fechado jogava tudo fora,
-# silenciosamente (usuário via "às vezes dá erro e ela não responde").
-TIMEOUT_TURNO_VOZ_SEGUNDOS = 120
-# 🔥 Mensagem de texto (2026-10-02, caso real): um turno com imagem (`<IMAGEM_NOS:>`,
-# LLM + geração com referência 1-2min + resposta final) passava dos 30s - o ERIS
-# desistia e respondia "A Galateia está desligada agora" com ela ligada e
-# ainda trabalhando. Mesma regra do turno de voz: maior que o lado da GAIA
-# (`integrations/iris_bridge.py`, `/eris/mensagem`, timeout=240).
-TIMEOUT_MENSAGEM_SEGUNDOS = 270
+TIMEOUT_SEGUNDOS = 30  # rotas rápidas (votos, metadados, sugestão de música)
+
+# 🔥 Timeout por rota (2026-11-12) - sempre a espera do lado da GAIA
+# (`integrations/iris_bridge.py`, `future.result(timeout=...)`) MAIS uma folga.
+# Com o timeout daqui menor que o de lá, o ERIS desiste e fecha a conexão antes
+# da GAIA terminar: a resposta já gerada se perde num `ConnectionAbortedError` e
+# a pessoa lê "A Galateia está desligada" com ela ligada. Aconteceu 3 vezes
+# (voz em 2026-08-25, texto com imagem em 2026-10-02, `/eris/comando` com 30s
+# contra 60s de lá). Mudou o timeout de uma rota na GAIA? Atualize aqui.
+_FOLGA_SEGUNDOS = 30
+_ESPERA_DA_GAIA_POR_ROTA = {
+    "/eris/mensagem": 240,  # turno com imagem: LLM + geração com referência
+    "/eris/comando": 60,
+    "/eris/lista_desejo_forcar": 30,
+    "/eris/interprete/turno": 90,  # Whisper + LLM + TTS
+    "/eris/tutora/turno": 90,
+    "/eris/conversa/turno": 90,
+}
+TIMEOUT_POR_ROTA = {rota: espera + _FOLGA_SEGUNDOS for rota, espera in _ESPERA_DA_GAIA_POR_ROTA.items()}
 
 
-def _post(caminho, corpo, timeout=TIMEOUT_SEGUNDOS):
+def timeout_da_rota(caminho):
+    return TIMEOUT_POR_ROTA.get(caminho, TIMEOUT_SEGUNDOS)
+
+
+def _post(caminho, corpo, timeout=None):
     try:
         dados = json.dumps(corpo).encode("utf-8")
         req = urllib.request.Request(f"{URL_BASE_GAIA}{caminho}", data=dados, method="POST", headers={"Content-Type": "application/json"})
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        with urllib.request.urlopen(req, timeout=timeout or timeout_da_rota(caminho)) as resp:
             corpo_resposta = resp.read()
             return json.loads(corpo_resposta) if corpo_resposta else {}
     except Exception as e:
@@ -51,9 +56,9 @@ def _post(caminho, corpo, timeout=TIMEOUT_SEGUNDOS):
         return None
 
 
-def _get(caminho, timeout=TIMEOUT_SEGUNDOS):
+def _get(caminho, timeout=None):
     try:
-        with urllib.request.urlopen(f"{URL_BASE_GAIA}{caminho}", timeout=timeout) as resp:
+        with urllib.request.urlopen(f"{URL_BASE_GAIA}{caminho}", timeout=timeout or timeout_da_rota(caminho)) as resp:
             corpo_resposta = resp.read()
             return json.loads(corpo_resposta) if corpo_resposta else {}
     except Exception as e:
@@ -69,7 +74,7 @@ def pedir_resposta_persona(texto, eh_dono, remetente_id, remetente_nome, channel
     resultado = _post("/eris/mensagem", {
         "texto": texto, "eh_dono": eh_dono, "remetente_id": str(remetente_id),
         "remetente_nome": remetente_nome, "channel_id": str(channel_id),
-    }, timeout=TIMEOUT_MENSAGEM_SEGUNDOS)
+    })
     if resultado is None:
         return None
     return resultado.get("resposta")
@@ -89,7 +94,7 @@ def pedir_turno_conversa(guild_id, speaker_id, speaker_nome, eh_dono, audio_pcm_
     resultado = _post("/eris/conversa/turno", {
         "guild_id": str(guild_id), "speaker_id": str(speaker_id), "speaker_nome": speaker_nome,
         "eh_dono": bool(eh_dono), "audio_b64": base64.b64encode(audio_pcm_16k_mono).decode("ascii"),
-    }, timeout=TIMEOUT_TURNO_VOZ_SEGUNDOS)
+    })
     if not resultado or not resultado.get("caminho_audio"):
         return None
     return resultado.get("caminho_audio")
@@ -127,7 +132,7 @@ def pedir_turno_interprete(guild_id, speaker_id, speaker_nome, eh_dono, audio_pc
     resultado = _post("/eris/interprete/turno", {
         "guild_id": str(guild_id), "speaker_id": str(speaker_id), "speaker_nome": speaker_nome,
         "eh_dono": bool(eh_dono), "audio_b64": base64.b64encode(audio_pcm_16k_mono).decode("ascii"),
-    }, timeout=TIMEOUT_TURNO_VOZ_SEGUNDOS)
+    })
     if not resultado or not resultado.get("caminho_audio"):
         return None
     return resultado
@@ -149,7 +154,7 @@ def pedir_turno_tutora(guild_id, audio_pcm_16k_mono):
     None."""
     resultado = _post("/eris/tutora/turno", {
         "guild_id": str(guild_id), "audio_b64": base64.b64encode(audio_pcm_16k_mono).decode("ascii"),
-    }, timeout=TIMEOUT_TURNO_VOZ_SEGUNDOS)
+    })
     if not resultado or not resultado.get("caminho_audio"):
         return None
     return resultado.get("caminho_audio")

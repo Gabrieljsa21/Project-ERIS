@@ -1928,14 +1928,234 @@ Agora o comando não tem parâmetros e só chama `paineis.abrir_fusao`
 (PANDORA 0.3.0), o mesmo caminho do botão "🧬 Fusão" do hub. O PANDORA
 0.3.0 também tem um teste que fixa as assinaturas que este bot importa.
 
+## Melhorias da análise de 2026-11-12 (0.3.0)
+
+- **Timeout por rota no webhook reverso** (`gaia_webhook.TIMEOUT_POR_ROTA`):
+  espera da GAIA (`iris_bridge.py`) + 30 s de folga. O `/eris/comando` usava
+  30 s contra 60 s do lado de lá, a terceira vez do mesmo erro (voz em
+  2026-08-25, texto com imagem em 2026-10-02). Um teste garante que nenhuma
+  rota da tabela fica abaixo da espera da GAIA; mudou lá, muda aqui.
+- **Ponte HTTP com threads e erro em JSON**: `ThreadingHTTPServer` (um
+  `/exportar` longo travava as notificações) e todo handler devolve 504 quando
+  o loop do bot não responde em 30 s, 500 nos outros erros. `/status` passou
+  a usar `client.is_ready()`, que reflete queda do gateway.
+- **Modo Música**: `data/` por caminho absoluto (`config.PASTA_DADOS`) e
+  gravação atômica (`eris/persistencia.py`: `.tmp` + `os.replace`).
+- **Botões de "Tocando agora" persistentes**: `musica.BotaoMusica` é um
+  `discord.ui.DynamicItem` com `custom_id` `eris_musica:<ação>:<guild>`,
+  registrado com `client.add_dynamic_items` no papel "musica". Artista e
+  título não cabem no `custom_id` (100 caracteres), então ficam em
+  `data/musica_anuncios.json` pelo ID da mensagem (últimos 500). A lógica de
+  cada botão continua em `_ControlesMusica`, sem mudança de comportamento.
+- **Colecionador fora do `bot.py`**: modais, views e slash commands do PANDORA
+  foram para `eris/comandos_pandora.py` (`registrar(tree)`); o `bot.py` caiu de
+  2.079 para cerca de 930 linhas. Removidos sem efeito visível: os 17
+  subcomandos de `pandora_admin_legacy` (nunca registrados) e
+  `_ViewFerramentasAdminPandora` (sem uso).
+- **PANDORA importado por papel** (`bot._carregar_pandora`): o "principal"
+  exige o PANDORA; o "musica" só usa o auto-colecionador e sobe sem ele se o
+  import falhar.
+- **Menos SQLite por mensagem**: `db.ids_donos_ativos` e
+  `db.obter_config_roteamento` ficam em cache, esvaziado por toda função de
+  gravação do próprio `db.py` (todas as escritas passam por ele, no mesmo
+  processo). O rate limit de `seguranca.py` poda remetentes inativos.
+- **Logs**: DEBUG do `voice_recv` só com `ERIS_DEBUG_VOICE_RECV=1`; diários
+  `logs/AAAA-MM-DD.log` com mais de 30 dias são apagados no boot.
+- **Máscara de token**: aceita o formato atual de token de bot (24 a 28 . 6 .
+  27 a 40), antes mascarado pela metade.
+- **Testes**: `python -m pytest` na raiz (pytest no grupo `dev`), 31 testes em
+  `testes/testar_*.py`.
+
+## Voz na call: bloqueio DAVE e fork do voice_recv (2026-08-25)
+
+Movido do `TODO.md` em 2026-11-12 (o TODO guarda só pendências; o critério de
+retirada do fork continua lá).
+
+**Status: CONFIRMADO funcionando numa call real (2026-08-25) - "agora eu a
+escutei".** Fica registrado abaixo o histórico completo do diagnóstico
+(3 causas raiz distintas, cada uma mascarando a próxima) - útil se algo
+similar quebrar de novo. A dependência do fork ainda precisa ser commitada
+(ver final desta seção).
+
+Validado em 2026-08-25 com uma call real: `/conversar entrar` conecta,
+ativa a escuta (`VoiceRecvClient.listen`), e pacotes RTP CHEGAM de
+verdade (confirmado com `discord.ext.voice_recv` em DEBUG) - mas o Opus
+decoder falhava com `discord.opus.OpusError: corrupted stream` em todo
+pacote. Causa raiz: desde março de 2026, o Discord tornou obrigatória a
+criptografia ponta a ponta (protocolo **DAVE**) pra TODA call de voz/vídeo
+fora de Stage Channel, sem opção de desligar (nem por conta, nem por
+servidor - [confirmado oficialmente](https://support.discord.com/hc/en-us/articles/38749827197591-A-V-E2EE-Enforcement-for-Non-Stage-Voice-Calls)).
+O `discord.py` 2.7 já suporta DAVE no cliente de voz PRINCIPAL via o
+pacote `davey` (já vem instalado como dependência - envio de áudio pela
+call funciona normal), mas o `discord-ext-voice-recv` original (biblioteca
+de terceiro pra RECEBER áudio, ver `eris/core/voz_call.py`) tem seu
+PRÓPRIO decodificador de pacote separado que nunca foi atualizado pra
+entender DAVE - só desencripta a camada RTP
+(`aead_xchacha20_poly1305_rtpsize`, que funciona), mas o áudio Opus por
+dentro continua criptografado pela camada DAVE (MLS), então virava lixo
+pro decoder.
+
+🔥 **Atualização 2026-08-25 (mesmo dia)**: o usuário achou uma PR real da
+comunidade que resolve exatamente isso -
+[`imayhaveborkedit/discord-ext-voice-recv#54`](https://github.com/imayhaveborkedit/discord-ext-voice-recv/pull/54)
+("Added support for DAVE decryption in opus.py"), aberta desde 07/03/2026,
+ainda não mesclada upstream (repo original sem commit desde 18/06/2025,
+efetivamente sem manutenção desde a imposição do DAVE). Múltiplos usuários
+confirmaram nos comentários que resolve o `OpusError: corrupted stream`,
+inclusive alguém especificamente no discord.py 2.7.1 (nossa versão exata).
+Adotado inicialmente via o fork de terceiro `jstewart0788/discord-ext-voice-recv-dave`
+(MIT), que carrega a PR #54 + 1 commit de hardening próprio (except mais
+estrito, logs separados de "SSRC sem membro" vs "falha de decrypt DAVE") -
+auditado linha por linha antes de instalar (diff pequeno, +26/-4 nos
+arquivos originais). Delega a decriptação de verdade pro `davey` oficial
+do Discord (nunca reimplementa criptografia própria) - a API do `davey`
+0.1.6 já instalado bate exatamente com o que o patch espera
+(`MediaType.audio`/`.video`, `DaveSession`).
+
+🔥 **Fork movido pra conta própria (mesmo dia)** - pedido do usuário:
+"e ele pode deixar privado ou algo assim e parar de funcionar p nos?".
+Depender do fork de uma conta de terceiro é risco de cadeia de
+suprimentos de verdade (repo pode sumir/virar privado, `uv sync` do zero
+simplesmente falha) - resolvido com um fork DESSE fork pra dentro da
+própria conta
+([`Gabrieljsa21/discord-ext-voice-recv-dave`](https://github.com/Gabrieljsa21/discord-ext-voice-recv-dave),
+via `gh repo fork`, preservando histórico/atribuição). Instalado em
+`pyproject.toml`, fixado por commit SHA
+(`78fcb434a3484f2abf54cf89e80e86b651e5c28d`, não branch - branch pode
+sofrer force-push, SHA é imutável). Caminho de import não mudou
+(`discord.ext.voice_recv`) - nenhum código nosso precisou mudar, só a
+dependência.
+
+**Ressalvas conhecidas** (ver comentários da PR #54, lidos na íntegra
+antes de adotar): um bug de câmera ligada foi corrigido numa revisão
+posterior (payload não-áudio causava `member is None`); um usuário relatou
+`OpusError: corrupted stream` residual numa revisão intermediária, mas
+confirmou que a decriptação em si funcionava; existe um erro ocasional
+`DecryptionFailed(UnencryptedWhenPassthroughDisabled)` tratável por
+re-escutar; e um bug NÃO resolvido de quem entra pelo Discord Web no
+Safari/iPhone não ser ouvido corretamente (edge case raro, sem
+reprodução/fix ainda).
+
+🔥 **Validado numa call real (2026-08-25) - 2 causas raiz ADICIONAIS
+encontradas depois do fix acima**, cada uma mascarando a seguinte (áudio
+chegava e era processado certo em cada etapa, só a etapa seguinte falhava
+em silêncio):
+1. **Reprodução "concluída sem erro" mas inaudível** - não era DAVE no
+   envio (`can_encrypt=True`/`dave_session.ready=True` confirmados em todo
+   teste, log de diagnóstico dedicado). Causa raiz de verdade:
+   `sintetizar_frase` (`Project G.A.I.A/assistant/core/voice/tts.py`)
+   sempre devolveu caminho RELATIVO do áudio - resolvia contra o cwd do
+   ERIS, não da GAIA, desde a extração pra processos separados. FFmpeg
+   falhava em achar o arquivo EM SILÊNCIO (discord.py não propaga isso
+   como exceção). Corrigido do lado da GAIA com `os.path.abspath()` (mesmo
+   bug também achado e corrigido na tag `<PRINT>`).
+2. **Sob carga pesada (Groq esgotando várias contas em sequência), o turno
+   às vezes não gerava resposta nenhuma** - `TIMEOUT_TURNO_VOZ_SEGUNDOS`
+   aqui (60s) era menor que o timeout do lado da GAIA pro mesmo turno
+   (90s, `integrations/iris_bridge.py`) - o ERIS desistia e fechava a
+   conexão ANTES da GAIA terminar de responder, e a resposta certa (já
+   gerada) se perdia num `ConnectionAbortedError` ao tentar escrever no
+   socket já fechado. Corrigido subindo pra 120s
+   (`eris/integrations/gaia_webhook.py`).
+
+**Existe uma 2ª PR concorrente**, [#56](https://github.com/imayhaveborkedit/discord-ext-voice-recv/pull/56),
+mais abrangente (trata vídeo/screenshare/SSRC desconhecido) mas o próprio
+autor admite "não é uma implementação completa da máquina de estados
+DAVE/MLS ainda" - não adotada por ora, PR #54 é mais enxuta e testada por
+mais gente na nossa versão exata do discord.py. Reavaliar se a #54 não se
+provar estável.
+
+**Quando retirar este fork** (mesmo critério do `FORK_RATIONALE.md` dele):
+upstream mesclar a PR #54 (ou equivalente) e lançar uma release, OU o
+`py-cord` ganhar suporte de recepção DAVE no core (acompanhado, mas não
+adotado - o suporte a DAVE dele hoje também é só pro lado de envio,
+confirmado direto no changelog e no código-fonte).
+
+**Se a correção acima não se provar estável na prática, caminhos
+alternativos:**
+1. Tentar a PR #56 (mais abrangente, menos madura).
+2. Implementar a decriptação DAVE por conta própria, hookando o pacote
+   `davey` direto no pipeline de recepção - trabalho real de integração
+   de criptografia, não trivial (mas o patch da PR #54 já mostra que o
+   caminho funciona).
+3. Aceitar a limitação por enquanto - Intérprete/Tutora/Modo Conversa por
+   voz numa call ficam bloqueados (a Gala pode ENTRAR e FALAR na call
+   normalmente, só não consegue OUVIR ninguém).
+
+## Dependências fora do comum
+
+Movido dos comentários do `pyproject.toml` em 2026-11-12, sem mudança de conteúdo.
+
+### `pandora` por caminho local
+
+🔥 `pandora` (2026-08-29) - Colecionador (gacha estilo Mudae) EXTRAÍDO pra
+`../Project-PANDORA` (biblioteca Python local, não satélite HTTP - decisão
+explícita: todo clique de roll/claim/troca cai no orçamento de 3s do
+Discord, um satélite HTTP colocaria uma chamada de rede em cima de CADA
+clique, risco real de regredir os 2 bugs de timeout já corrigidos no
+Colecionador antes da extração). Dependência de PATH local (`tool.uv.
+sources` abaixo, editável) - não publicada no PyPI, só existe nesta
+máquina/ecossistema.
+
+### yt-dlp, libopus e o fork do voice_recv
+
+🔥 yt-dlp (2026-08-25, Modo Música - substitui o Jockie Music, pedido do
+usuário) - busca/extração de áudio streamável do YouTube pra tocar na call
+(eris/core/musica.py). Não usa cookie/login por padrão (client "android" do
+extractor, que historicamente não exige o proof-of-origin token que o
+client "web" passou a exigir desde 2024) - ver docs/ARQUITETURA.md pra
+fallback via YOUTUBE_COOKIES_FILE se isso parar de funcionar no futuro.
+
+🔥 discord-ext-voice-recv-dave/PyNaCl/numpy (2026-08-25) - recepção de áudio de
+voz pro Modo Intérprete/Tutora/Conversa (ver eris/core/voz_captura.py, eris/core/
+vad.py). libopus não precisa ser INSTALADO à parte no Windows - discord.py já
+embute o DLL (`discord/bin/libopus-0.x64.dll`) - mas precisa ser CARREGADO
+explicitamente em runtime (`discord.opus._load_default()`, ver
+eris/bot.py::iniciar_bot) - a lib NÃO faz isso sozinha no import (achado real
+2026-08-25: sem essa chamada, a call conecta normal mas não ouve nem fala nada,
+em silêncio). Também precisa do ffmpeg (conversão de voz nativa, já usado por
+eris/core/voz_nativa.py) pra tocar o áudio sintetizado na call.
+
+🔥 `discord-ext-voice-recv-dave` (2026-08-25, achado real) - o
+`discord-ext-voice-recv` original está SEM commit desde 2025-06-18,
+efetivamente sem manutenção desde a imposição do DAVE em 2026-03-02 pelo
+Discord (toda call de voz sem suporte a DAVE cai com erro 4017). O original
+decripta certo a camada RTP, mas o Opus por dentro continua criptografado
+pela camada DAVE (MLS) - vira "OpusError: corrupted stream" em todo pacote
+(bug real, ver docs/CORRECOES.md da GAIA). Existe uma correção real da
+comunidade pra isso - PR #54 (`imayhaveborkedit/discord-ext-voice-recv#54`,
+https://github.com/imayhaveborkedit/discord-ext-voice-recv/pull/54, ainda
+aberta, NÃO mesclada upstream) - delega a decriptação de verdade pro
+`davey` oficial do Discord (binding Python de `libdave`), nunca reimplementa
+criptografia própria. VALIDADA numa call real (2026-08-25 - "agora eu a
+escutei", ver docs/TODO.md).
+
+🔥 FORK PRÓPRIO, não de terceiro (2026-08-25, pedido do usuário: "e ele
+pode deixar privado ou algo assim e parar de funcionar p nos?") - a PR #54
+tinha sido empacotada por um terceiro (`jstewart0788/discord-ext-voice-recv-dave`,
+MIT, carregando a PR #54 + 1 commit de hardening próprio - except mais
+estrito, logs separados de "SSRC sem membro" vs "falha de decrypt DAVE").
+Depender do fork de uma conta que a gente não controla é risco de cadeia de
+suprimentos de verdade (repo pode sumir/virar privado/ser apagado, e um
+`uv sync` do zero simplesmente falha) - resolvido fazendo um fork DESSE
+fork pra dentro da própria conta (`Gabrieljsa21/discord-ext-voice-recv-dave`,
+github.com/Gabrieljsa21/discord-ext-voice-recv-dave), preservando histórico/
+atribuição. Caminho de import continua `discord.ext.voice_recv` (inalterado)
+- nenhum código nosso precisou mudar, só a dependência. FIXADO por commit
+SHA (não branch - branch pode sofrer force-push, SHA é imutável).
+
+Retirar este fork quando UM dos dois acontecer: (1) upstream mesclar a PR
+#54 (ou equivalente) e lançar uma release - trocar pro
+`imayhaveborkedit/discord-ext-voice-recv` oficial de novo; ou (2) o
+`py-cord` ganhar suporte de recepção DAVE no core (acompanhado, mas ainda
+não - o suporte a DAVE dele hoje também é só pro lado de envio).
+
 ## Pendências
 
-- **Slash commands de ação via webhook** (`/abrir`, `/jornalista`, etc.) -
-  desenho fechado, implementação fora do escopo (ponto 3 acima).
 - Nenhuma validação contra um servidor/bot Discord real ainda foi feita pro
   resto do ERIS (moderação/exportação/texto) - ver README.md, "Estado da
   extração". Voz por call (Conversa/Intérprete/Tutora) JÁ foi validada com
-  sucesso em 2026-08-25 (ver TODO.md, bloqueio DAVE resolvido) - Modo
+  sucesso em 2026-08-25 (ver "Voz na call: bloqueio DAVE e fork do voice_recv") - Modo
   Música ainda não (playback numa call real, ver TODO.md).
 - **Colecionador de Personagens** - EXTRAÍDO pro [Project PANDORA](../../Project-PANDORA)
   (2026-08-29, ver seção acima) - pendências de validação do cutover em si

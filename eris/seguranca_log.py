@@ -10,7 +10,10 @@ VARIAVEIS_SEGREDO = (
 )
 PADROES_FORMATO = (
     re.compile(r"gsk_[A-Za-z0-9]{20,}"),
-    re.compile(r"[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27}"),
+    # Token de bot do Discord: ID em base64 (24 a 28 caracteres, cresce com o
+    # ID), carimbo de 6 e HMAC de 27 (formato antigo) a 38 (atual). O padrão
+    # de antes só aceitava 24.6.27 e mascarava os tokens novos pela metade.
+    re.compile(r"[A-Za-z0-9_-]{24,28}\.[A-Za-z0-9_-]{6}\.[A-Za-z0-9_-]{27,40}"),
 )
 MASCARA = "[SEGREDO REMOVIDO]"
 _TAMANHO_MINIMO_VALOR = 8

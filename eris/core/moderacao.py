@@ -21,7 +21,6 @@ import datetime
 import discord
 
 from eris import db
-from eris.core import mensagens
 
 LIMITE_BULK_DELETE_DIAS = 14
 
