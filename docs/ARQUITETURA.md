@@ -1928,6 +1928,21 @@ Agora o comando não tem parâmetros e só chama `paineis.abrir_fusao`
 (PANDORA 0.3.0), o mesmo caminho do botão "🧬 Fusão" do hub. O PANDORA
 0.3.0 também tem um teste que fixa as assinaturas que este bot importa.
 
+## Sem ícone próprio quando a GAIA liga (2026-11-12, 0.4.0)
+
+Pedido do usuário ("pq so a eris tem icone na bandeja?"): a ERIS era o único
+satélite com ícone na área de notificação. O ícone nasceu em 2026-08-30,
+quando a ERIS só subia pelo `iniciar_eris.bat` e não havia outro jeito de ver
+que estava de pé, abrir os logs ou fechar sem terminal. Desde a GAIA 0.28.0
+(2026-11-12) a GAIA liga e desliga cada papel pelo menu da bandeja dela
+(`integrations/eris_app.py`), então o ícone virou controle duplicado.
+
+`eris_app.iniciar` da GAIA põe `ERIS_SEM_ICONE_BANDEJA=1` no ambiente; o
+watchdog repassa ao bot, e `tray.iniciar` pula o ícone (o listener de
+controle remoto do papel música continua). Sem a variável, ligada pelo
+`.bat`/`.vbs`, o ícone continua igual, porque aí ele é o único controle e a
+única forma de ver os logs com a GAIA fechada.
+
 ## Melhorias da análise de 2026-11-12 (0.3.0)
 
 - **Timeout por rota no webhook reverso** (`gaia_webhook.TIMEOUT_POR_ROTA`):
