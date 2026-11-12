@@ -7,6 +7,16 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-12
+
+### Alterado
+
+- **Sem ícone próprio na bandeja quando a GAIA liga a ERIS:** a GAIA já liga
+  e desliga cada papel pelo menu dela, e a ERIS era o único satélite com ícone
+  próprio. Com `ERIS_SEM_ICONE_BANDEJA=1` no ambiente (posto pela GAIA),
+  `tray.iniciar` não cria o ícone. Ligada pelo `iniciar_eris.bat`/`.vbs`, o
+  ícone continua como antes.
+
 ## [0.3.0] - 2026-11-12
 
 ### Corrigido (2026-11-12, melhorias da análise)

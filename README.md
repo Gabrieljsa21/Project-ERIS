@@ -44,7 +44,7 @@ python -m eris.main
 
 Preencha `DISCORD_BOT_TOKEN` no `.env`. `DISCORD_OWNER_IDS` define os donos na primeira execução. Depois disso, a lista fica salva em `data/eris.db`.
 
-Em uso diário, `iniciar_eris_oculto.vbs` abre as instâncias principal e de música sem terminais visíveis. O ícone da bandeja permite ver logs, reiniciar e encerrar as duas instâncias. Use `encerrar_eris.ps1` somente quando o ícone não responder.
+Em uso diário, `iniciar_eris_oculto.vbs` abre as instâncias principal e de música sem terminais visíveis. O ícone da bandeja permite ver logs, reiniciar e encerrar as duas instâncias. Quando a ERIS é ligada pela GAIA (menu da bandeja dela), esse ícone não aparece: o controle fica no menu da GAIA. Use `encerrar_eris.ps1` somente quando o ícone não responder.
 
 ## Testes
 

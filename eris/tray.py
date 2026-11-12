@@ -38,6 +38,13 @@ except ImportError:
     _TRAY_DISPONIVEL = False
 
 TIMEOUT_FECHAMENTO_FORCADO_SEGUNDOS = 5.0
+
+# 🔥 Sem ícone quando quem liga é a GAIA (2026-11-12, pedido do usuário: "pq so
+# a eris tem icone na bandeja?"). A GAIA liga e desliga cada papel pelo menu
+# da bandeja dela e marca o ambiente com esta variável; o ícone próprio virou
+# controle duplicado. Ligada pelo `iniciar_eris.bat`/`.vbs` (sem a GAIA), a
+# variável não existe e o ícone continua, pra ter como ver logs e fechar.
+VARIAVEL_SEM_ICONE = "ERIS_SEM_ICONE_BANDEJA"
 TIMEOUT_COMANDO_REMOTO_SEGUNDOS = 3.0
 
 # Ícone oficial do ERIS (a Maçã Dourada da Discórdia, ver README).
@@ -166,6 +173,10 @@ def iniciar(papel):
     "musica" só sobe o listener de controle remoto, sem UI nenhuma."""
     if papel != "principal":
         _escutar_comandos_remotos()
+        return
+
+    if os.environ.get(VARIAVEL_SEM_ICONE) == "1":
+        print(" [SISTEMA] Ligada pela GAIA - sem ícone próprio na bandeja (o menu da GAIA controla).")
         return
 
     if not _TRAY_DISPONIVEL:
