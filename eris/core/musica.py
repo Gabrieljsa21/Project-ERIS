@@ -36,7 +36,6 @@ caminho crítico entre uma faixa acabar e a próxima começar. As duas camadas
 são reabastecidas em BACKGROUND (`asyncio.create_task`, nunca bloqueando a
 reprodução atual) sempre que caem abaixo do mínimo."""
 import asyncio
-import json
 import math
 import os
 import time
@@ -44,7 +43,9 @@ import time
 import discord
 import yt_dlp
 
+from eris.config import PASTA_DADOS
 from eris.integrations import gaia_webhook
+from eris.persistencia import ler_json, salvar_json_atomico
 
 _sessoes_musica = {}  # guild_id -> SessaoMusica
 
@@ -63,7 +64,10 @@ _STREAMS_ALVO = 10
 _STREAMS_MINIMO = 5
 _STREAM_MAX_IDADE_SEGUNDOS = 3600  # link do YouTube expira - re-resolve antes de tocar se passou disso
 
-_PASTA_SESSOES_PERSISTIDAS = "data"
+# 🔥 Caminho absoluto (2026-11-12) - era "data" relativo ao diretório atual:
+# só funcionava porque o `iniciar_eris.bat` faz `cd` antes; subir o processo de
+# outro lugar perdia a retomada da sessão e o canal configurado em silêncio.
+_PASTA_SESSOES_PERSISTIDAS = PASTA_DADOS
 
 _YTDL_OPCOES_BASE = {
     "format": "bestaudio/best",
@@ -121,18 +125,10 @@ def _carregar_estado_sessao(guild_id):
     `tocando_agora`, o suficiente pra `retomar_sessoes_persistidas`
     reconectar e voltar a tocar sozinha no boot, sem precisar de nenhum
     comando manual."""
-    caminho = _arquivo_estado_sessao(guild_id)
-    if not os.path.exists(caminho):
-        return None
-    try:
-        with open(caminho, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return None
+    return ler_json(_arquivo_estado_sessao(guild_id))
 
 
 def _salvar_estado_sessao(sessao):
-    os.makedirs(_PASTA_SESSOES_PERSISTIDAS, exist_ok=True)
     estado = {
         "canal_id": sessao._vc.channel.id if sessao._vc else None,
         "text_channel_id": sessao.text_channel.id if sessao.text_channel else None,
@@ -142,8 +138,7 @@ def _salvar_estado_sessao(sessao):
         "tocando_agora": sessao.tocando_agora,
         "fila_logica": sessao.fila_logica,
     }
-    with open(_arquivo_estado_sessao(sessao.guild_id), "w", encoding="utf-8") as f:
-        json.dump(estado, f, ensure_ascii=False, indent=2)
+    salvar_json_atomico(_arquivo_estado_sessao(sessao.guild_id), estado)
 
 
 def _remover_estado_sessao(guild_id):
@@ -157,13 +152,7 @@ _ARQUIVO_CANAL_RESTRITO = os.path.join(_PASTA_SESSOES_PERSISTIDAS, "musica_canal
 
 
 def _carregar_canais_restritos():
-    if not os.path.exists(_ARQUIVO_CANAL_RESTRITO):
-        return {}
-    try:
-        with open(_ARQUIVO_CANAL_RESTRITO, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+    return ler_json(_ARQUIVO_CANAL_RESTRITO, {})
 
 
 def obter_canal_restrito(guild_id):
@@ -187,9 +176,7 @@ def definir_canal_restrito(guild_id, canal_id):
         canais.pop(str(guild_id), None)
     else:
         canais[str(guild_id)] = str(canal_id)
-    os.makedirs(_PASTA_SESSOES_PERSISTIDAS, exist_ok=True)
-    with open(_ARQUIVO_CANAL_RESTRITO, "w", encoding="utf-8") as f:
-        json.dump(canais, f, ensure_ascii=False, indent=2)
+    salvar_json_atomico(_ARQUIVO_CANAL_RESTRITO, canais)
 
 
 def _buscar_no_youtube(query):
@@ -248,12 +235,12 @@ async def _buscar_sugestao_no_youtube(sugestao):
     return faixa
 
 
-class _ViewControlesMusica(discord.ui.View):
+class _ControlesMusica:
     """⏯️/⏭️/👍/👎/▶️/📋 na mensagem de "tocando agora" (2026-08-26/27,
     pedido do usuário: "quando ela toca uma musica, podia aparecer botoes
     de like, dislike e next", depois expandido com pausar/retomar, replay e
-    fila). `timeout=None` - a música pode tocar por horas, os botões
-    continuam válidos até uma faixa nova substituir a mensagem.
+    fila). Lógica de cada botão; quem desenha e despacha é `BotaoMusica`
+    (2026-11-12), que continua funcionando depois de um reinício do ERIS.
 
     🔥 like/dislike/replay/fila continuam abertos a QUALQUER membro
     (like/dislike alimentam só o perfil de quem clicou, ver `gaia_webhook.
@@ -262,7 +249,6 @@ class _ViewControlesMusica(discord.ui.View):
     quem iniciou a sessão (decisão do usuário 2026-08-26)."""
 
     def __init__(self, guild_id, artista, titulo):
-        super().__init__(timeout=None)
         self._guild_id = guild_id
         self._artista = artista
         self._titulo = titulo
@@ -295,8 +281,7 @@ class _ViewControlesMusica(discord.ui.View):
     # like, dislike - replay (▶️) e fila (📋) vêm depois, são utilitários
     # secundários, não controle de reprodução em si.
 
-    @discord.ui.button(emoji="⏯️", style=discord.ButtonStyle.secondary)
-    async def _pausar_retomar(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def _pausar_retomar(self, interaction: discord.Interaction):
         """Toggle único (2026-08-27, pedido do usuário) - emoji ⏸️/▶️
         trocando dinamicamente colidiria visualmente com o botão de replay
         (▶️, sempre presente na mesma mensagem), por isso um símbolo
@@ -309,19 +294,16 @@ class _ViewControlesMusica(discord.ui.View):
         mensagem = retomar(self._guild_id) if pausado else pausar(self._guild_id)
         await interaction.response.send_message(mensagem, ephemeral=True)
 
-    @discord.ui.button(emoji="⏭️", style=discord.ButtonStyle.secondary)
-    async def _pular(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def _pular(self, interaction: discord.Interaction):
         if not await self._somente_iniciador(interaction):
             return
         mensagem = pular(self._guild_id)
         await interaction.response.send_message(mensagem, ephemeral=True)
 
-    @discord.ui.button(emoji="👍", style=discord.ButtonStyle.green)
-    async def _like(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def _like(self, interaction: discord.Interaction):
         await self._feedback(interaction, "positivo", "Anotado - mais disso.")
 
-    @discord.ui.button(emoji="👎", style=discord.ButtonStyle.red)
-    async def _dislike(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def _dislike(self, interaction: discord.Interaction):
         """👎 já pula a faixa junto (2026-08-29, pedido do usuário: "qnd
         clico no dislike, pode ja pular a musica junto tbm", depois "pode
         restirngir o skip do dislike a quem iniciou") - o VOTO continua
@@ -348,8 +330,7 @@ class _ViewControlesMusica(discord.ui.View):
             resposta += " " + pular(self._guild_id)
         await interaction.followup.send(resposta, ephemeral=True)
 
-    @discord.ui.button(emoji="▶️", style=discord.ButtonStyle.blurple)
-    async def _tocar_de_novo(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def _tocar_de_novo(self, interaction: discord.Interaction):
         """Replay (2026-08-26, pedido do usuário: "Adicionar botão de play,
         para caso queira voltar em alguma musica que tocou") - a mensagem
         de "tocando agora" de uma faixa antiga continua no canal com seus
@@ -363,14 +344,83 @@ class _ViewControlesMusica(discord.ui.View):
             return
         await interaction.followup.send(mensagem, ephemeral=True)
 
-    @discord.ui.button(emoji="📋", style=discord.ButtonStyle.secondary)
-    async def _mostrar_fila(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def _mostrar_fila(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         estado = await obter_fila(self._guild_id)
         if estado is None:
             await interaction.followup.send("Não tô tocando nada nesse servidor agora.", ephemeral=True)
             return
         await interaction.followup.send(formatar_estado_fila(estado), ephemeral=True)
+
+
+# 🔥 Botões persistentes (2026-11-12) - antes a view não tinha `custom_id` nem
+# era registrada no client: depois de qualquer reinício do ERIS, clicar 👍/▶️
+# numa mensagem antiga de "Tocando agora" dava "interação falhou". Agora cada
+# botão tem `custom_id` fixo (`eris_musica:<ação>:<guild>`) e `BotaoMusica` é
+# registrado com `client.add_dynamic_items` (ver `eris/bot.py::iniciar_bot`).
+# O custom_id não cabe artista/título (limite de 100 caracteres do Discord),
+# então a faixa de cada anúncio fica em `data/musica_anuncios.json`, pelo ID
+# da mensagem. Mensagens anteriores a esta versão continuam sem resposta.
+_BOTOES_MUSICA = {
+    "pausar_retomar": ("⏯️", discord.ButtonStyle.secondary),
+    "pular": ("⏭️", discord.ButtonStyle.secondary),
+    "like": ("👍", discord.ButtonStyle.green),
+    "dislike": ("👎", discord.ButtonStyle.red),
+    "tocar_de_novo": ("▶️", discord.ButtonStyle.blurple),
+    "mostrar_fila": ("📋", discord.ButtonStyle.secondary),
+}
+_ARQUIVO_ANUNCIOS = os.path.join(PASTA_DADOS, "musica_anuncios.json")
+_ANUNCIOS_MAX = 500
+
+
+def registrar_anuncio(message_id, artista, titulo):
+    anuncios = ler_json(_ARQUIVO_ANUNCIOS, {})
+    anuncios[str(message_id)] = {"artista": artista, "titulo": titulo}
+    while len(anuncios) > _ANUNCIOS_MAX:
+        anuncios.pop(next(iter(anuncios)))
+    salvar_json_atomico(_ARQUIVO_ANUNCIOS, anuncios)
+
+
+def faixa_do_anuncio(message_id):
+    faixa = ler_json(_ARQUIVO_ANUNCIOS, {}).get(str(message_id))
+    return (faixa["artista"], faixa["titulo"]) if faixa else (None, None)
+
+
+class BotaoMusica(discord.ui.DynamicItem[discord.ui.Button], template=r"eris_musica:(?P<acao>[a-z_]+):(?P<guild>[0-9]+)"):
+    def __init__(self, acao, guild_id, artista=None, titulo=None):
+        emoji, estilo = _BOTOES_MUSICA[acao]
+        super().__init__(discord.ui.Button(emoji=emoji, style=estilo, custom_id=f"eris_musica:{acao}:{guild_id}"))
+        self.acao = acao
+        self.guild_id = int(guild_id)
+        self.artista = artista
+        self.titulo = titulo
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        """Só chamado quando a view original não está mais na memória (ERIS
+        reiniciou): recupera a faixa pelo ID da mensagem clicada."""
+        if match["acao"] not in _BOTOES_MUSICA:
+            raise ValueError(match["acao"])
+        artista, titulo = faixa_do_anuncio(interaction.message.id) if interaction.message else (None, None)
+        return cls(match["acao"], match["guild"], artista, titulo)
+
+    async def callback(self, interaction: discord.Interaction):
+        precisa_da_faixa = self.acao in ("like", "dislike", "tocar_de_novo")
+        if precisa_da_faixa and not self.artista:
+            await interaction.response.send_message("Não consegui identificar a faixa desse anúncio.", ephemeral=True)
+            return
+        controles = _ControlesMusica(self.guild_id, self.artista, self.titulo)
+        await getattr(controles, f"_{self.acao}")(interaction)
+
+
+class _ViewControlesMusica(discord.ui.View):
+    """`timeout=None` - a música pode tocar por horas. Ordem pedida pelo
+    usuário (2026-08-27): pausar/retomar, pular, like, dislike, replay, fila."""
+
+    def __init__(self, guild_id, artista, titulo):
+        super().__init__(timeout=None)
+        for acao in _BOTOES_MUSICA:
+            self.add_item(BotaoMusica(acao, guild_id, artista, titulo))
 
 
 _PAGINA_VOTOS_TAMANHO = 25  # teto do Discord pra opções de um select, dá pra usar a página inteira
@@ -610,7 +660,8 @@ class SessaoMusica:
                 color=COR_EMBED_MUSICA,
             )
             try:
-                await self.text_channel.send(embed=embed, view=view)
+                mensagem = await self.text_channel.send(embed=embed, view=view)
+                registrar_anuncio(mensagem.id, faixa["artista"], faixa["titulo"])
             except Exception as e:
                 print(f" [ERIS] Não consegui anunciar a música no canal: {e}")
 

@@ -43,7 +43,6 @@ load_dotenv(os.path.join(PASTA_PROJETO, _ARQUIVO_ENV), override=True)
 from eris import bot, db, tray  # noqa: E402
 from eris.seguranca_log import limpar_segredos  # noqa: E402
 from eris.api_bridge import iniciar_servidor_api  # noqa: E402
-from pandora import db as colecao_db  # noqa: E402 - mesmo alias de `eris/bot.py`
 from eris.config import PORTA_INSTANCIA_UNICA, PORTA_INSTANCIA_UNICA_MUSICA  # noqa: E402
 from eris.watchdog import EXIT_CODE_FECHAR  # noqa: E402
 
@@ -185,6 +184,31 @@ def _ativar_diagnostico_de_saida():
         print(" [SISTEMA] faulthandler não pôde ser ativado (não é crítico, resto do diagnóstico continua valendo).")
 
 
+DIAS_RETENCAO_LOGS = 30
+
+
+def _apagar_logs_antigos():
+    """Os `logs/AAAA-MM-DD.log` não tinham limpeza nenhuma (77 arquivos e
+    28 MB em 2026-11-12). Apaga só os diários com mais de
+    DIAS_RETENCAO_LOGS dias; `watchdog_*.log` e `crash_*.log` ficam."""
+    limite = datetime.date.today() - datetime.timedelta(days=DIAS_RETENCAO_LOGS)
+    pasta_logs = os.path.join(PASTA_PROJETO, "logs")
+    try:
+        nomes = os.listdir(pasta_logs)
+    except OSError:
+        return
+    for nome in nomes:
+        try:
+            data = datetime.date.fromisoformat(nome[:-len(".log")]) if nome.endswith(".log") else None
+        except ValueError:
+            continue
+        if data is not None and data < limite:
+            try:
+                os.remove(os.path.join(pasta_logs, nome))
+            except OSError:
+                pass
+
+
 def _ativar_log_debug_voice_recv():
     """DEBUG só do `discord.ext.voice_recv` (não do discord.py inteiro - o
     gateway de texto sozinho já loga heartbeat a cada ~40s, ruído demais pra
@@ -197,7 +221,12 @@ def _ativar_log_debug_voice_recv():
     soquete" (rede/firewall) de "chegou mas foi descartado antes do Sink"
     (bug na própria lib/versão). Chamado SÓ depois de _ativar_log_em_disco -
     precisa que sys.stdout já seja o _RedirecionadorLog, pra este handler
-    escrever no mesmo lugar."""
+    escrever no mesmo lugar.
+
+    Desligado por padrão desde 2026-11-12 (era diagnóstico de agosto e
+    enchia o log de toda call): `ERIS_DEBUG_VOICE_RECV=1` no `.env` liga de novo."""
+    if os.getenv("ERIS_DEBUG_VOICE_RECV", "").strip() not in ("1", "true", "sim"):
+        return
     logger = logging.getLogger("discord.ext.voice_recv")
     logger.setLevel(logging.DEBUG)
     handler = logging.StreamHandler(sys.stdout)
@@ -244,6 +273,8 @@ def _verificar_migracao_completa():
     `colecao_db.inicializar()` (import novo, mesmo alias de `eris/bot.py`)
     de verdade. Esta função continua existindo como VERIFICAÇÃO/rede de
     segurança (não confiar cegamente que "rodou sem erro" = "aplicou")."""
+    from pandora import db as colecao_db
+
     def _faltando():
         faltando = []
         with colecao_db.conexao() as conn:
@@ -294,6 +325,7 @@ def _mostrar_versao_boot():
 
 def main():
     _ativar_log_em_disco()
+    _apagar_logs_antigos()
     _ativar_diagnostico_de_saida()
     _ativar_log_debug_voice_recv()
     _garantir_instancia_unica()
@@ -316,6 +348,9 @@ def main():
         # do Colecionador/PANDORA) rodava. Toda mudança de schema do
         # Colecionador feita depois da extração (2026-08-29) nunca tinha
         # sido aplicada automaticamente em produção até agora.
+        # Import aqui, não no topo (2026-11-12): o papel "musica" não pode
+        # depender do PANDORA pra subir, ver `eris/bot.py::_carregar_pandora`.
+        from pandora import db as colecao_db
         colecao_db.inicializar()
         _verificar_migracao_completa()
         ids_bootstrap = [i.strip() for i in os.getenv("DISCORD_OWNER_IDS", "").split(",") if i.strip()]

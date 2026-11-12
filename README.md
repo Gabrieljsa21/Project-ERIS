@@ -46,6 +46,13 @@ Preencha `DISCORD_BOT_TOKEN` no `.env`. `DISCORD_OWNER_IDS` define os donos na p
 
 Em uso diário, `iniciar_eris_oculto.vbs` abre as instâncias principal e de música sem terminais visíveis. O ícone da bandeja permite ver logs, reiniciar e encerrar as duas instâncias. Use `encerrar_eris.ps1` somente quando o ícone não responder.
 
+## Testes
+
+```
+uv sync --group dev
+.venv\Scripts\python.exe -m pytest
+```
+
 ## Integrações com outros projetos
 
 - **GAIA:** cria o conteúdo das conversas, interpreta voz e envia mensagens programadas. Se estiver desligada, os recursos locais do bot continuam ativos.

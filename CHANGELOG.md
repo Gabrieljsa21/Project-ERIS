@@ -7,6 +7,32 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-12
+
+### Corrigido (2026-11-12, melhorias da análise)
+
+- **`/abrir`, `/jornalista` e os outros comandos da GAIA não respondem mais "desligada" quando demoram**: o ERIS desistia em 30 s e a GAIA espera até 60 s. Agora cada rota do webhook reverso tem o timeout da GAIA mais 30 s de folga, numa tabela única.
+- **Ponte HTTP não trava mais durante uma exportação longa** e sempre responde (504 ou 500 em JSON) quando algo falha, em vez de fechar a conexão calada. `/status` mostra se o bot está conectado agora, não só se conectou alguma vez.
+- **Modo Música grava o estado em `data/` do projeto qualquer que seja a pasta de onde o processo subiu**, sem corromper o arquivo numa queda no meio da gravação.
+- **Máscara de token no log** cobre o formato atual de token do Discord por inteiro.
+
+### Adicionado
+
+- **Botões do "Tocando agora" continuam funcionando depois de reiniciar o ERIS** (👍, 👎, ▶️, 📋, ⏯️, ⏭️). Vale para os anúncios feitos a partir desta versão.
+- **Testes com pytest** (`python -m pytest`, 31 testes): mensagens, filtro de roteamento e rate limit, watchdog, timeouts, persistência, cache do banco, botões de música.
+- `ERIS_DEBUG_VOICE_RECV=1` no `.env` liga o log detalhado do áudio recebido nas calls (agora desligado por padrão).
+
+### Alterado
+
+- Comandos e painéis do Colecionador saíram do `bot.py` para `eris/comandos_pandora.py`, sem mudança para quem usa. O papel "musica" sobe mesmo com o PANDORA indisponível (fica só sem o auto-colecionador).
+- Logs diários com mais de 30 dias são apagados no boot.
+- Donos e configuração de roteamento ficam em cache na memória (antes, até 3 consultas ao SQLite por mensagem recebida).
+- `yt-dlp` atualizado no `uv.lock`.
+
+### Removido
+
+- 17 subcomandos internos de `pandora_admin_legacy` e a view `_ViewFerramentasAdminPandora`, que nunca eram registrados nem usados (o painel `/pandora_admin` cobre tudo).
+
 ## [0.2.1] - 2026-11-10
 
 ### Corrigido (2026-11-10, `/merge`)
