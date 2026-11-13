@@ -1928,6 +1928,33 @@ Agora o comando não tem parâmetros e só chama `paineis.abrir_fusao`
 (PANDORA 0.3.0), o mesmo caminho do botão "🧬 Fusão" do hub. O PANDORA
 0.3.0 também tem um teste que fixa as assinaturas que este bot importa.
 
+## Aprovação de respostas do THOTH (2026-11-13, 0.5.0)
+
+O THOTH sugere respostas para conversas do WhatsApp; a GAIA decide quando
+avisar e o ERIS só entrega a DM e repassa o clique. Fluxo:
+
+1. A GAIA chama `POST /notificar_donos_com_botoes` (porta 8772) com
+   `donos_ids`, `texto` (a mensagem pronta) e `rascunho` (`id` hexadecimal de 6
+   a 32 caracteres e `texto` sugerido). Corpo inválido devolve 400, bot
+   desconectado 503 e nenhuma DM entregue 502, sempre com `{"ok": false,
+   "erro": ...}`; deu certo, `{"ok": true}`.
+2. A rota guarda `id -> texto` em `data/thoth_rascunhos.json` (gravação
+   atômica de `eris/persistencia.py`, poda de 7 dias a cada gravação) e manda a
+   DM por `mensagens.notificar_donos_com_view`. Texto acima de 2.000
+   caracteres sai em mais de uma mensagem e os botões vão só na última.
+3. `thoth.BotaoThoth` é um `discord.ui.DynamicItem` com `custom_id`
+   `thoth:<enviar|editar|descartar>:<id>`, registrado com
+   `client.add_dynamic_items` no papel "principal" (as DMs saem dele). Só dono
+   (`seguranca.eh_dono`) passa; os outros recebem uma resposta ephemeral.
+4. "Enviar" e "Descartar" chamam `gaia_webhook.pedir_acao_thoth` numa thread.
+   "Editar" abre um modal com o texto guardado (até 4.000 caracteres) e envia
+   o texto editado. A rota `/eris/thoth_acao` espera até 90 s do lado da GAIA
+   (o envio pelo WhatsApp leva até 60 s), 120 s do lado do ERIS.
+5. Com `ok`, a DM é editada: botões desabilitados e uma linha de status no fim
+   (o texto é encurtado se a soma passar de 2.000 caracteres), e o rascunho sai
+   do JSON. Sem `ok` ou com a GAIA fora do ar, só um aviso ephemeral, para o
+   dono tentar de novo.
+
 ## Sem ícone próprio quando a GAIA liga (2026-11-12, 0.4.0)
 
 Pedido do usuário ("pq so a eris tem icone na bandeja?"): a ERIS era o único

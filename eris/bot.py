@@ -17,7 +17,7 @@ import discord
 from discord import app_commands
 
 from eris import db
-from eris.core import mensagens, moderacao, musica, seguranca, voz_call
+from eris.core import mensagens, moderacao, musica, seguranca, thoth, voz_call
 from eris.integrations import gaia_webhook
 
 # 🔥 Gatilho por menção pros 3 modos de voz (portado de discord_bot.py,
@@ -749,6 +749,9 @@ async def iniciar_bot(token, papel="principal"):
         # ERIS depois dela subir resolve, ver gaia_webhook.obter_comandos_gaia).
         metadados_comandos_gaia = await asyncio.to_thread(gaia_webhook.obter_comandos_gaia)
         _registrar_slash_comandos_gaia(tree, metadados_comandos_gaia)
+        # Botões de aprovação do THOTH nas DMs dos donos respondem mesmo
+        # depois de um reinício (2026-11-13, ver `thoth.BotaoThoth`).
+        client.add_dynamic_items(thoth.BotaoThoth)
     else:
         # 🔥 Exclusivo do papel "musica" (2026-08-26, achado pelo usuário: "pq
         # a gaia e a eris tem /caos? N deveria ser apenas da eris?") - antes
