@@ -7,6 +7,22 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-13
+
+### Adicionado
+
+- **Aprovação das respostas de WhatsApp sugeridas pelo THOTH:** a GAIA chama
+  a rota nova `POST /notificar_donos_com_botoes` e cada dono recebe uma DM com
+  o resumo e três botões. "Enviar" manda a sugestão como está, "Editar" abre
+  um formulário já preenchido para ajustar antes de enviar e "Descartar"
+  descarta. A decisão segue para a GAIA (`POST /eris/thoth_acao`). Deu certo:
+  os botões ficam desabilitados e a DM ganha a linha "✅ Enviado" ou
+  "🗑️ Descartado". Falhou (GAIA fora do ar, por exemplo): só um aviso, e os
+  botões continuam ativos.
+- Os botões funcionam depois de reiniciar o ERIS, e o "Editar" continua
+  preenchido: o texto sugerido fica em `data/thoth_rascunhos.json` por 7 dias.
+- 12 testes novos (43 no total).
+
 ## [0.4.0] - 2026-11-12
 
 ### Alterado

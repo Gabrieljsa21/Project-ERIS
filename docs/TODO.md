@@ -32,6 +32,17 @@ de verdade: (1) clicar 👍/▶️/📋 num "Tocando agora" depois de reiniciar 
 da separação para `eris/comandos_pandora.py`; (3) um `/jornalista` demorado
 (timeout de 90 s); (4) o papel "musica" subindo com o PANDORA indisponível.
 
+### Validar ao vivo os botões do THOTH (0.5.0)
+
+**Prioridade:** Alta | **Complexidade:** Baixa
+
+Testado só com mocks. Falta, com a GAIA já chamando `/notificar_donos_com_botoes`:
+(1) receber a DM e clicar Enviar, Editar e Descartar; (2) clicar depois de
+reiniciar o papel "principal" (botões persistentes e "Editar" preenchido);
+(3) um envio pelo WhatsApp perto dos 60 s (timeout de 120 s do lado do ERIS);
+(4) a linha de status e os botões desabilitados numa DM longa, dividida em
+duas mensagens.
+
 ### Mover `eris/comandos_pandora.py` para o PANDORA
 
 **Prioridade:** Média | **Complexidade:** Média

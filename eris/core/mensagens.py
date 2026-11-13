@@ -102,6 +102,28 @@ async def notificar_donos(donos_ids, texto, arquivos=None):
             print(f" [ERIS] Falha ao notificar dono {id_} proativamente: {e}")
 
 
+async def notificar_donos_com_view(donos_ids, texto, criar_view):
+    """Irmã de `notificar_donos` com botões (2026-11-13, aprovação do THOTH).
+    Texto acima do limite do Discord vai em mais de uma mensagem e os botões
+    só na última. `criar_view` monta uma view nova por dono (a mesma instância
+    não deve ir em duas mensagens). Devolve quantas DMs saíram, ou None se o
+    bot ainda não conectou."""
+    if _client_atual is None:
+        return None
+    blocos = fatiar_mensagem(texto)
+    entregues = 0
+    for id_ in donos_ids:
+        try:
+            usuario = await _client_atual.fetch_user(int(id_))
+            for bloco in blocos[:-1]:
+                await usuario.send(bloco)
+            await usuario.send(blocos[-1], view=criar_view())
+            entregues += 1
+        except Exception as e:
+            print(f" [ERIS] Falha ao mandar a DM com botões ao dono {id_}: {e}")
+    return entregues
+
+
 async def enviar_para_canal(channel_id, texto, arquivos=None):
     """Entrega direta por ID de canal (usado pela GAIA quando ela já sabe o
     canal de destino - ex.: resposta a uma DM em andamento, ver

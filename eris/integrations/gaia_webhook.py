@@ -36,6 +36,7 @@ _ESPERA_DA_GAIA_POR_ROTA = {
     "/eris/interprete/turno": 90,  # Whisper + LLM + TTS
     "/eris/tutora/turno": 90,
     "/eris/conversa/turno": 90,
+    "/eris/thoth_acao": 90,  # envio pelo WhatsApp leva até 60 s
 }
 TIMEOUT_POR_ROTA = {rota: espera + _FOLGA_SEGUNDOS for rota, espera in _ESPERA_DA_GAIA_POR_ROTA.items()}
 
@@ -291,3 +292,20 @@ def pedir_ideia_lista_desejo():
     if not resultado:
         return None
     return resultado.get("ideia")
+
+
+# --------------------------------------------------------------------------
+# THOTH: aprovação das respostas de WhatsApp sugeridas (2026-11-13, ver
+# eris/core/thoth.py)
+# --------------------------------------------------------------------------
+
+def pedir_acao_thoth(discord_user_id, rascunho_id, acao, texto=None):
+    """Repassa o clique do dono ("enviar" ou "descartar"; `texto` só vem
+    quando ele editou antes de enviar). Devolve sempre um dict
+    {"ok": bool, "mensagem": str}, inclusive com a GAIA fora do ar."""
+    resultado = _post("/eris/thoth_acao", {
+        "discord_user_id": str(discord_user_id), "rascunho_id": str(rascunho_id), "acao": acao, "texto": texto,
+    })
+    if resultado is None:
+        return {"ok": False, "mensagem": "GAIA fora do ar"}
+    return {"ok": bool(resultado.get("ok")), "mensagem": resultado.get("mensagem") or ""}

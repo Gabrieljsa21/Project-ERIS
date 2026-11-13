@@ -10,6 +10,7 @@ Bot de Discord que cuida da conexão, segurança, moderação, mensagens, export
 
 - comandos de moderação e controle de cargos e canais;
 - mensagens diretas, menções e respostas em canais permitidos;
+- aprovação por DM das respostas de WhatsApp sugeridas pelo THOTH;
 - exportação de canais para JSON;
 - modos de conversa por voz;
 - reprodução musical em uma instância separada;
