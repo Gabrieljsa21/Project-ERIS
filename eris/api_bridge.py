@@ -136,6 +136,8 @@ class _API(BaseHTTPRequestHandler):
             self._responder_ok()
         elif self.path == "/notificar_donos_com_botoes":
             self._notificar_donos_com_botoes(corpo)
+        elif self.path == "/notificar_donos_pergunta":
+            self._notificar_donos_pergunta(corpo)
         elif self.path == "/notificar_canal":
             ok = _rodar_no_loop_do_bot(mensagens.enviar_para_canal(
                 corpo.get("channel_id"), corpo.get("texto", ""), _arquivos_de_json(corpo.get("arquivos")),
@@ -187,6 +189,27 @@ class _API(BaseHTTPRequestHandler):
         thoth.registrar_rascunho(rascunho_id, rascunho.get("texto") or "")
         entregues = _rodar_no_loop_do_bot(mensagens.notificar_donos_com_view(
             donos_ids, texto, lambda: thoth.ViewThoth(rascunho_id),
+        ))
+        if entregues is None:
+            self._responder_json({"ok": False, "erro": "Bot do ERIS ainda não conectou."}, status=503)
+        elif entregues == 0:
+            self._responder_json({"ok": False, "erro": "Nenhuma DM foi entregue."}, status=502)
+        else:
+            self._responder_json({"ok": True})
+
+    def _notificar_donos_pergunta(self, corpo):
+        """Pergunta de confirmação do cofre do THOTH, um botão por opção
+        (2026-11-14, ver `thoth.ViewPerguntaThoth`)."""
+        donos_ids = corpo.get("donos_ids") or []
+        texto = corpo.get("texto") or ""
+        pergunta = corpo.get("pergunta") or {}
+        pergunta_id, opcoes = pergunta.get("id"), [str(o) for o in (pergunta.get("opcoes") or []) if str(o).strip()]
+        if not donos_ids or not texto.strip() or not thoth.id_pergunta_valido(pergunta_id) or not opcoes:
+            self._responder_json({"ok": False, "erro": "Corpo inválido: donos_ids, texto, pergunta.id e pergunta.opcoes são obrigatórios."}, status=400)
+            return
+        thoth.registrar_pergunta(pergunta_id, opcoes)
+        entregues = _rodar_no_loop_do_bot(mensagens.notificar_donos_com_view(
+            donos_ids, texto, lambda: thoth.ViewPerguntaThoth(pergunta_id, opcoes),
         ))
         if entregues is None:
             self._responder_json({"ok": False, "erro": "Bot do ERIS ainda não conectou."}, status=503)

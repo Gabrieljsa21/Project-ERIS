@@ -145,3 +145,80 @@ async def executar_acao(interaction, rascunho_id, acao, texto, mensagem):
             print(f" [ERIS] THOTH: não consegui atualizar a DM do rascunho {rascunho_id}: {e}")
     await asyncio.to_thread(esquecer_rascunho, rascunho_id)
     await interaction.followup.send(resultado.get("mensagem") or _STATUS_POR_ACAO[acao], ephemeral=True)
+
+
+# ---------- Perguntas de confirmação do cofre do THOTH (2026-11-14) ----------
+# O THOTH pergunta o que o Claude deduziu ("Maurício é cônjuge de Ana?"); cada
+# opção vira um botão `thothp:<id>:<índice>`. Os rótulos ficam em
+# `data/thoth_perguntas.json` para a mensagem ser redesenhada (botões
+# desligados) mesmo depois de um reinício. A resposta vai para a GAIA, que
+# repassa ao THOTH (`gaia_webhook.responder_pergunta_thoth`).
+
+PADRAO_ID_PERGUNTA = r"[0-9a-f]{12}"
+_ARQUIVO_PERGUNTAS = os.path.join(PASTA_DADOS, "thoth_perguntas.json")
+_MAX_OPCOES = 5                 # uma fileira do Discord
+
+
+def id_pergunta_valido(pergunta_id):
+    return isinstance(pergunta_id, str) and re.fullmatch(PADRAO_ID_PERGUNTA, pergunta_id) is not None
+
+
+def registrar_pergunta(pergunta_id, opcoes, agora=None):
+    agora = time.time() if agora is None else agora
+    perguntas = podar_rascunhos(ler_json(_ARQUIVO_PERGUNTAS, {}), agora)
+    perguntas[pergunta_id] = {"opcoes": [str(o)[:80] for o in opcoes][:_MAX_OPCOES], "criado_em": agora}
+    salvar_json_atomico(_ARQUIVO_PERGUNTAS, perguntas)
+
+
+def opcoes_da_pergunta(pergunta_id):
+    dados = ler_json(_ARQUIVO_PERGUNTAS, {}).get(pergunta_id)
+    return dados.get("opcoes", []) if isinstance(dados, dict) else []
+
+
+class BotaoPerguntaThoth(discord.ui.DynamicItem[discord.ui.Button],
+                         template=rf"thothp:(?P<id>{PADRAO_ID_PERGUNTA}):(?P<opcao>[0-9])"):
+    def __init__(self, pergunta_id, opcao, rotulo="?", desabilitado=False):
+        super().__init__(discord.ui.Button(
+            label=rotulo, style=discord.ButtonStyle.primary if opcao == 0 else discord.ButtonStyle.secondary,
+            custom_id=f"thothp:{pergunta_id}:{opcao}", disabled=desabilitado,
+        ))
+        self.pergunta_id = pergunta_id
+        self.opcao = opcao
+
+    @classmethod
+    async def from_custom_id(cls, interaction, item, match):
+        return cls(match["id"], int(match["opcao"]), item.label or "?")
+
+    async def callback(self, interaction: discord.Interaction):
+        if not seguranca.eh_dono(interaction.user.id):
+            await interaction.response.send_message("Só o dono pode usar.", ephemeral=True)
+            return
+        await responder_pergunta(interaction, self.pergunta_id, self.opcao, interaction.message)
+
+
+class ViewPerguntaThoth(discord.ui.View):
+    """Uma pergunta, um botão por opção; `timeout=None` porque a resposta pode vir dias depois."""
+
+    def __init__(self, pergunta_id, opcoes, desabilitada=False):
+        super().__init__(timeout=None)
+        for indice, rotulo in enumerate(opcoes[:_MAX_OPCOES]):
+            self.add_item(BotaoPerguntaThoth(pergunta_id, indice, rotulo, desabilitada))
+
+
+async def responder_pergunta(interaction, pergunta_id, opcao, mensagem):
+    """Repassa a escolha. Deu certo: desliga os botões e põe a resposta na DM."""
+    await interaction.response.defer(ephemeral=True)
+    resultado = await asyncio.to_thread(gaia_webhook.responder_pergunta_thoth, interaction.user.id, pergunta_id, opcao)
+    if not resultado.get("ok"):
+        await interaction.followup.send(f"Falhou: {resultado.get('mensagem') or 'sem detalhe'}", ephemeral=True)
+        return
+    if mensagem is not None:
+        opcoes = opcoes_da_pergunta(pergunta_id) or [b.label for b in getattr(mensagem, "components", [])]
+        try:
+            await mensagem.edit(
+                content=conteudo_com_status(mensagem.content, f"✅ {resultado.get('mensagem') or 'Respondido'}"),
+                view=ViewPerguntaThoth(pergunta_id, opcoes, desabilitada=True),
+            )
+        except discord.HTTPException as e:
+            print(f" [ERIS] THOTH: não consegui atualizar a DM da pergunta {pergunta_id}: {e}")
+    await interaction.followup.send("Anotado.", ephemeral=True)

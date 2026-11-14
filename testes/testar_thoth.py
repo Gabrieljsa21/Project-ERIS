@@ -202,3 +202,50 @@ def testar_acao_com_falha_so_avisa_e_mantem_botoes(tmp_path, monkeypatch):
     assert mensagem.edicoes == []
     assert interacao.followups == ["Falhou: GAIA fora do ar"]
     assert thoth.texto_do_rascunho("abc123") == "Oi"
+
+
+def testar_pergunta_custom_id_e_view():
+    padrao = thoth.BotaoPerguntaThoth.__discord_ui_compiled_template__
+    assert padrao.fullmatch("thothp:" + "a" * 12 + ":0") and not padrao.fullmatch("thothp:abc:0")
+    view = thoth.ViewPerguntaThoth("a" * 12, ["Sim", "Não"], desabilitada=True)
+    assert [b.item.custom_id for b in view.children] == ["thothp:" + "a" * 12 + ":0", "thothp:" + "a" * 12 + ":1"]
+    assert [b.item.label for b in view.children] == ["Sim", "Não"] and all(b.item.disabled for b in view.children)
+
+
+def testar_rota_pergunta_guarda_opcoes_e_manda_dm(tmp_path, monkeypatch):
+    monkeypatch.setattr(thoth, "_ARQUIVO_PERGUNTAS", str(tmp_path / "thoth_perguntas.json"))
+    chamadas = []
+
+    def falso_rodar(coro):
+        chamadas.append(coro)
+        coro.close()
+        return 1
+    monkeypatch.setattr(api_bridge, "_rodar_no_loop_do_bot", falso_rodar)
+    resposta = _chamar_rota_em(monkeypatch, "/notificar_donos_pergunta", {
+        "donos_ids": ["1"], "texto": "Maurício é cônjuge de Ana?", "pergunta": {"id": "b" * 12, "opcoes": ["Sim", "Não"]}})
+    assert resposta == {"ok": True} and len(chamadas) == 1
+    assert thoth.opcoes_da_pergunta("b" * 12) == ["Sim", "Não"]
+    ruim = _chamar_rota_em(monkeypatch, "/notificar_donos_pergunta", {"donos_ids": ["1"], "texto": "x", "pergunta": {"id": "zz"}})
+    assert ruim["ok"] is False
+
+
+def testar_responder_pergunta_manda_o_corpo(monkeypatch):
+    enviados = []
+    monkeypatch.setattr(gaia_webhook, "_post", lambda caminho, corpo, timeout=None: enviados.append((caminho, corpo)) or {"ok": True, "mensagem": "Sim"})
+    assert gaia_webhook.responder_pergunta_thoth(42, "c" * 12, 1) == {"ok": True, "mensagem": "Sim"}
+    assert enviados == [("/eris/thoth_pergunta", {"discord_user_id": "42", "pergunta_id": "c" * 12, "opcao": 1})]
+    monkeypatch.setattr(gaia_webhook, "_post", lambda *a, **k: None)
+    assert gaia_webhook.responder_pergunta_thoth(42, "c" * 12, 1)["ok"] is False
+
+
+def _chamar_rota_em(monkeypatch, caminho, corpo):
+    respostas = []
+    handler = api_bridge._API.__new__(api_bridge._API)
+    bruto = json.dumps(corpo).encode("utf-8")
+    handler.path = caminho
+    handler.command = "POST"
+    handler.headers = {"Content-Length": str(len(bruto))}
+    handler.rfile = io.BytesIO(bruto)
+    monkeypatch.setattr(handler, "_responder_json", lambda dados, status=200: respostas.append(dados), raising=False)
+    handler.do_POST()
+    return respostas[-1]

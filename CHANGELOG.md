@@ -7,6 +7,17 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-14
+
+### Adicionado
+
+- **Perguntas de confirmação do cofre do THOTH:** a GAIA chama a rota nova
+  `POST /notificar_donos_pergunta` e cada dono recebe uma DM com um botão por
+  opção (ex.: "Maurício é cônjuge de Ana?" com Sim e Não). O clique volta para
+  a GAIA em `POST /eris/thoth_pergunta`; deu certo, os botões se desligam e a
+  resposta aparece na mensagem. Botões persistentes (`thothp:<id>:<opção>`),
+  respondem mesmo depois de um reinício.
+
 ## [0.5.0] - 2026-11-13
 
 ### Adicionado
