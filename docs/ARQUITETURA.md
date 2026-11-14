@@ -1928,6 +1928,10 @@ Agora o comando não tem parâmetros e só chama `paineis.abrir_fusao`
 (PANDORA 0.3.0), o mesmo caminho do botão "🧬 Fusão" do hub. O PANDORA
 0.3.0 também tem um teste que fixa as assinaturas que este bot importa.
 
+## Perguntas de confirmação do THOTH (2026-11-14, 0.6.0)
+
+Mesmo desenho da aprovação de respostas: o ERIS só desenha os botões e repassa a escolha; quem decide o que perguntar e quando é o THOTH, e quem entrega é a GAIA. `BotaoPerguntaThoth` (`thothp:<id>:<índice>`, até 5 opções numa fileira) é registrado com `add_dynamic_items` junto do `BotaoThoth`. Os rótulos ficam em `data/thoth_perguntas.json` (podados em 7 dias) para a mensagem ser redesenhada com os botões desligados depois da resposta, mesmo após um reinício.
+
 ## Aprovação de respostas do THOTH (2026-11-13, 0.5.0)
 
 O THOTH sugere respostas para conversas do WhatsApp; a GAIA decide quando

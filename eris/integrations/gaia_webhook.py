@@ -37,6 +37,7 @@ _ESPERA_DA_GAIA_POR_ROTA = {
     "/eris/tutora/turno": 90,
     "/eris/conversa/turno": 90,
     "/eris/thoth_acao": 90,  # envio pelo WhatsApp leva até 60 s
+    "/eris/thoth_pergunta": 30,
 }
 TIMEOUT_POR_ROTA = {rota: espera + _FOLGA_SEGUNDOS for rota, espera in _ESPERA_DA_GAIA_POR_ROTA.items()}
 
@@ -305,6 +306,17 @@ def pedir_acao_thoth(discord_user_id, rascunho_id, acao, texto=None):
     {"ok": bool, "mensagem": str}, inclusive com a GAIA fora do ar."""
     resultado = _post("/eris/thoth_acao", {
         "discord_user_id": str(discord_user_id), "rascunho_id": str(rascunho_id), "acao": acao, "texto": texto,
+    })
+    if resultado is None:
+        return {"ok": False, "mensagem": "GAIA fora do ar"}
+    return {"ok": bool(resultado.get("ok")), "mensagem": resultado.get("mensagem") or ""}
+
+
+def responder_pergunta_thoth(discord_user_id, pergunta_id, opcao):
+    """Repassa a resposta de uma pergunta de confirmação do THOTH (índice da opção).
+    Devolve {"ok", "mensagem"}, inclusive com a GAIA fora do ar."""
+    resultado = _post("/eris/thoth_pergunta", {
+        "discord_user_id": str(discord_user_id), "pergunta_id": str(pergunta_id), "opcao": int(opcao),
     })
     if resultado is None:
         return {"ok": False, "mensagem": "GAIA fora do ar"}

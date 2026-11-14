@@ -751,7 +751,7 @@ async def iniciar_bot(token, papel="principal"):
         _registrar_slash_comandos_gaia(tree, metadados_comandos_gaia)
         # Botões de aprovação do THOTH nas DMs dos donos respondem mesmo
         # depois de um reinício (2026-11-13, ver `thoth.BotaoThoth`).
-        client.add_dynamic_items(thoth.BotaoThoth)
+        client.add_dynamic_items(thoth.BotaoThoth, thoth.BotaoPerguntaThoth)
     else:
         # 🔥 Exclusivo do papel "musica" (2026-08-26, achado pelo usuário: "pq
         # a gaia e a eris tem /caos? N deveria ser apenas da eris?") - antes
