@@ -585,7 +585,7 @@ voice = [
 
 [[package]]
 name = "eris"
-version = "0.6.0"
+version = "0.6.1"
 source = { editable = "." }
 dependencies = [
     { name = "davey" },
@@ -1035,7 +1035,7 @@ wheels = [
 
 [[package]]
 name = "pandora"
-version = "0.3.0"
+version = "0.3.1"
 source = { editable = "../Project-PANDORA" }
 dependencies = [
     { name = "discord-py" },

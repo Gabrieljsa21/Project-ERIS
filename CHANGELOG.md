@@ -7,6 +7,12 @@ Histórico de alto nível do que muda no ERIS, por versão. Ver
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-15
+
+### Alterado
+
+- **`uv.lock` com o PANDORA 0.3.1:** o uv já tinha atualizado a linha no disco depois do PANDORA 0.3.1 (tabelas `colecao_*` antigas apagadas do `data/eris.db`); só faltava registrar. Sem mudança de código.
+
 ## [0.6.0] - 2026-11-14
 
 ### Adicionado
